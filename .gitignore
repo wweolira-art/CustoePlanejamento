@@ -10,12 +10,6 @@ dist/
 !.env.example
 *.local
 
-# Local databases and runtime files
-data/*.db
-data/*.db-*
-*.sqlite
-*.sqlite3
-
 # Generated media and service artifacts
 public/_stock-tmp/
 servico/*.exe
