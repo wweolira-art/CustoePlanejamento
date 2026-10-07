@@ -1,0 +1,7 @@
+# Evita break out-of-band e checksum TNS, que falham em VPN, NAT e túneis TCP (ngrok).
+DISABLE_OOB=on
+SQLNET.CRYPTO_CHECKSUM_CLIENT=rejected
+SQLNET.ENCRYPTION_CLIENT=rejected
+SQLNET.EXPIRE_TIME=10
+SQLNET.RECV_TIMEOUT=180
+SQLNET.SEND_TIMEOUT=180

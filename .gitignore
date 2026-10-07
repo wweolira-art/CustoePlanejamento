@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Local databases and runtime files
+data/*.db
+data/*.db-*
+*.sqlite
+*.sqlite3
+
+# Generated media and service artifacts
+public/_stock-tmp/
+servico/*.exe
+servico/*.pdb
+servico/*.pid
+servico/logs/
+
+# Temporary diagnostics
+tmp-*
+*.tmp
+*.log
+
+# OS and editor metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
