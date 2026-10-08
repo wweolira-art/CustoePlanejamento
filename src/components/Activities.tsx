@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Activity, type OracleActivity } from "../api";
+import { api, type Activity, type Empenho, type OracleActivity } from "../api";
 import { ReadOnlyFieldset } from "../lib/editAccess";
 
 const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 export function Activities() {
   const [rows, setRows] = useState<Activity[]>([]);
-  const [empenhos, setEmpenhos] = useState<string[]>([]);
+  const [empenhos, setEmpenhos] = useState<Empenho[]>([]);
   const [code, setCode] = useState("");
   const [description, setDescription] = useState("");
   const [empenho, setEmpenho] = useState("");
@@ -17,16 +17,16 @@ export function Activities() {
   const load = () => api.activities().then(setRows);
   useEffect(() => {
     void load();
-    void api.materials().then((materials) => {
-      const codes = [...new Set(materials.map((m) => m.empenho).filter((v): v is string => Boolean(v)))];
-      codes.sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
-      setEmpenhos(codes);
-    });
+    void api.empenhos().then(setEmpenhos).catch(() => setEmpenhos([]));
   }, []);
 
   const suggestions = useMemo(() => {
     const extra = rows.map((row) => row.empenho).filter((v): v is string => Boolean(v));
-    return [...new Set([...empenhos, ...extra])].sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+    const known = new Set(empenhos.map((row) => row.code));
+    const extraRows = extra
+      .filter((code) => !known.has(code))
+      .map((code) => ({ code, description: "" }));
+    return [...empenhos, ...extraRows].sort((a, b) => a.code.localeCompare(b.code, "pt-BR", { numeric: true }));
   }, [empenhos, rows]);
 
   const filtered = useMemo(() => {
@@ -165,8 +165,10 @@ export function Activities() {
         </table>
       </section>
       <datalist id="activity-empenhos">
-        {suggestions.map((code) => (
-          <option key={code} value={code} />
+        {suggestions.map((item) => (
+          <option key={item.code} value={item.code}>
+            {item.description}
+          </option>
         ))}
       </datalist>
       {importOpen ? (

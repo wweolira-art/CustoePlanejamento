@@ -12,6 +12,7 @@ import { costObjectHourCosts, equipmentHourCosts, listEquipments } from "./cost-
 import { activityApontamentoEquipment } from "./apontamento-equipment.js";
 import { copyLineSafraPricesBetween, ensureLineSafraPrices, setLineSafraPrice } from "./line-prices.js";
 import { importOracleActivities, listOracleActivities } from "./oracle-activities.js";
+import { importOracleEmpenhos, listEmpenhos, listOracleEmpenhos } from "./oracle-empenhos.js";
 import { importOracleFazendas, listOracleFazendas } from "./oracle-fazendas.js";
 import { importOracleMaterials, listMaterialGroups, listOracleMaterials, syncMaterialGroups } from "./oracle-materials.js";
 import { relatorioMaterialEntradaSaida } from "./materials-entrada-saida.js";
@@ -1861,6 +1862,29 @@ app.post("/api/activities/import-oracle", async (req, res) => {
     res.json(await importOracleActivities(codes));
   } catch (e) {
     res.status(400).json({ error: e instanceof Error ? e.message : "Não foi possível importar as atividades." });
+  }
+});
+
+app.get("/api/empenhos", (_req, res) => {
+  res.json(listEmpenhos());
+});
+
+app.get("/api/empenhos/oracle", async (_req, res) => {
+  try {
+    res.json({ items: await listOracleEmpenhos() });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Não foi possível consultar os empenhos no Oracle." });
+  }
+});
+
+app.post("/api/empenhos/import-oracle", async (req, res) => {
+  try {
+    const codes = Array.isArray((req.body as { codes?: unknown })?.codes)
+      ? ((req.body as { codes: unknown[] }).codes).map((code) => String(code))
+      : null;
+    res.json(await importOracleEmpenhos(codes));
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : "Não foi possível importar os empenhos." });
   }
 });
 

@@ -14,8 +14,6 @@ import {
 } from "../lib/reportAggregate";
 import { centerMatchesNegocios, negocioOptions } from "../lib/costCenterGroups";
 import { costPlanningSheet, useApp } from "../store";
-import { ReportFilter } from "./SubprocessFilter";
-import { SearchableReportFilter } from "./SearchableReportFilter";
 import { PrintButton } from "./PrintButton";
 import { useSafraLoaded } from "./SafraLoadProgress";
 
@@ -63,6 +61,35 @@ function EmptyMetrics() {
 
 function PageShell({ embedded, children }: { embedded?: boolean; children: ReactNode }) {
   return embedded ? <>{children}</> : <div className="page">{children}</div>;
+}
+
+function DropdownFilter({
+  caption,
+  options,
+  selected,
+  onChange,
+  allLabel = "Todos",
+}: {
+  caption: string;
+  options: { key: string; label: string }[];
+  selected: string[];
+  onChange: (keys: string[]) => void;
+  allLabel?: string;
+}) {
+  if (!options.length) return null;
+  return (
+    <label className="resumo-filter-field">
+      <span>{caption}</span>
+      <select value={selected[0] ?? ""} onChange={(event) => onChange(event.target.value ? [event.target.value] : [])}>
+        <option value="">{allLabel}</option>
+        {options.map((item) => (
+          <option key={item.key} value={item.key}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function arrendamentoAreaHa(areas: HarvestAreasData | null) {
@@ -235,42 +262,42 @@ export function Resumo({ embedded = false }: { embedded?: boolean } = {}) {
             <strong>{printMetrics.custoPorTon > 0 ? formatBRL(printMetrics.custoPorTon) : "—"}</strong>
           </div>
         </div>
-        <div className="kind-toggle">
-          <span className="toggle-caption">Agrupar</span>
-          {VIEWS.map((item) => (
-            <button
-              key={item.id}
-              className={`btn ${view === item.id ? "primary" : ""}`}
-              onClick={() => setView(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="resumo-filter-grid">
+          <label className="resumo-filter-field">
+            <span>Agrupar</span>
+            <select value={view} onChange={(event) => setView(event.target.value as View)}>
+              {VIEWS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <DropdownFilter
+            caption="Negócio"
+            options={negocioFilterOptions}
+            selected={selectedNegocios}
+            onChange={(keys) => {
+              setSelectedNegocios(keys);
+              setSelected([]);
+            }}
+          />
+          <DropdownFilter caption="Centro de custo" options={centerOptions} selected={selected} onChange={setSelected} />
+          <DropdownFilter
+            caption="Categoria"
+            options={categoryOptions}
+            selected={selectedCategories}
+            onChange={setSelectedCategories}
+          />
+          <DropdownFilter caption="Grupo" options={groupOptions} selected={selectedGroups} onChange={setSelectedGroups} />
+          <DropdownFilter
+            caption="Atividade"
+            options={activityOptions}
+            selected={selectedActivities}
+            onChange={setSelectedActivities}
+            allLabel="Todas"
+          />
         </div>
-        <ReportFilter
-          caption="Negócio"
-          options={negocioFilterOptions}
-          selected={selectedNegocios}
-          onChange={(keys) => {
-            setSelectedNegocios(keys);
-            setSelected([]);
-          }}
-        />
-        <ReportFilter caption="Centro de custo" options={centerOptions} selected={selected} onChange={setSelected} />
-        <ReportFilter
-          caption="Categoria"
-          options={categoryOptions}
-          selected={selectedCategories}
-          onChange={setSelectedCategories}
-        />
-        <ReportFilter caption="Grupo" options={groupOptions} selected={selectedGroups} onChange={setSelectedGroups} />
-        <SearchableReportFilter
-          caption="Atividade"
-          options={activityOptions}
-          selected={selectedActivities}
-          onChange={setSelectedActivities}
-          placeholder="Buscar atividade ou centro…"
-        />
         <div className="table-wrap">
           <table className={`data resumo${view === "detail" ? " resumo-detail" : ""}`}>
             <thead>

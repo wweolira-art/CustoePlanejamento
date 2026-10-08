@@ -291,6 +291,18 @@ export interface Activity {
   empenho: string | null;
 }
 
+export interface Empenho {
+  id: number;
+  code: string;
+  description: string;
+}
+
+export interface OracleEmpenho {
+  code: string;
+  description: string;
+  imported: boolean;
+}
+
 export interface ActivityRealizadoLink {
   id: number;
   safraId: number;
@@ -2847,6 +2859,10 @@ export const api = {
   oracleActivities: () => get<{ items: OracleActivity[] }>("/api/activities/oracle"),
   importOracleActivities: (codes?: string[]) =>
     send<{ imported: number; skipped: number; activities: Activity[] }>("/api/activities/import-oracle", "POST", { codes }),
+  empenhos: () => get<Empenho[]>("/api/empenhos"),
+  oracleEmpenhos: () => get<{ items: OracleEmpenho[] }>("/api/empenhos/oracle"),
+  importOracleEmpenhos: (codes?: string[]) =>
+    send<{ imported: number; updated: number; empenhos: Empenho[] }>("/api/empenhos/import-oracle", "POST", { codes }),
   addActivity: (body: { code: string; description: string; empenho?: string }) => send<Activity>("/api/activities", "POST", body),
   updateActivity: (id: number, body: { code?: string; description?: string; empenho?: string | null }) =>
     send<Activity>(`/api/activities/${id}`, "PATCH", body),

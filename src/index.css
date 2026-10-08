@@ -1452,6 +1452,48 @@ html[data-theme="dark"] table.data.resumo.resumo-detail tr.tree-activity td {
   background: var(--logo-blue-soft);
 }
 
+.resumo-consolidado .resumo-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  align-items: end;
+}
+
+.resumo-consolidado .resumo-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.resumo-consolidado .resumo-filter-field span {
+  color: var(--logo-blue);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.resumo-consolidado .resumo-filter-field select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--logo-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--logo-blue);
+  padding: 0 34px 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  box-shadow: 0 8px 20px rgba(34, 27, 68, 0.08);
+}
+
+.resumo-consolidado .resumo-filter-field select:focus {
+  border-color: var(--logo-blue);
+  box-shadow: 0 0 0 3px rgba(34, 27, 68, 0.12);
+}
+
 .resumo-consolidado .kind-toggle:not(.cost-planning-tabs):not(.cost-center-tabs):not(.external-site-tabs):not(.ia-admin-tabs) {
   padding-left: 16px;
   padding-right: 16px;

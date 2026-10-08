@@ -8,7 +8,6 @@ import {
   canAccessCostTab,
   canAccessSiteGroup,
   canManageUsers,
-  COST_CADASTRO_PAGE_KINDS,
   hasAnyCostPlanningAccess,
   PAGE_PERMISSIONS,
 } from "../lib/permissions";
@@ -64,10 +63,8 @@ export function Sidebar() {
   const visibleSiteGroups = siteGroups.filter((group) => {
     if (!isSidebarSiteGroup(group)) return false;
     if (group.nativeKey === "cost-planning") {
-      if (!IS_CUSTO_APP) return false;
       return canAccessSiteGroup(permissions, group.id) || hasAnyCostPlanningAccess(permissions);
     }
-    if (IS_CUSTO_APP) return false;
     return canAccessSiteGroup(permissions, group.id);
   });
   const cadastroPages = PAGE_PERMISSIONS.filter(
@@ -75,7 +72,6 @@ export function Sidebar() {
       row.pageKind !== "users" &&
       row.pageKind !== "externalSites" &&
       row.pageKind !== "manage" &&
-      (IS_CUSTO_APP || !COST_CADASTRO_PAGE_KINDS.has(row.pageKind)) &&
       canAccess(permissions, row.key),
   );
   const systemPages = PAGE_PERMISSIONS.filter(
@@ -99,9 +95,9 @@ export function Sidebar() {
         <SafraSelect variant="side" />
       </div>
 
-      {visibleSiteGroups.length ? <div className="nav-sec">{IS_CUSTO_APP ? "Planejamento" : "Sites e colheita"}</div> : null}
+      {visibleSiteGroups.length ? <div className="nav-sec">Planejamento, sites e colheita</div> : null}
       {visibleSiteGroups.map(renderSiteGroupBtn)}
-      {IS_CUSTO_APP && canAccessCostTab(permissions, "orcadoRealizado") ? (
+      {canAccessCostTab(permissions, "orcadoRealizado") ? (
         <button
           type="button"
           className={`nav-btn ${orcadoActive ? "active" : ""}`}

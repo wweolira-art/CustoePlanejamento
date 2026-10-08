@@ -2,6 +2,7 @@ import { Component, useEffect, useMemo, type ReactNode } from "react";
 import { Activities } from "./components/Activities";
 import { Categories } from "./components/Categories";
 import { CostObjects } from "./components/CostObjects";
+import { Empenhos } from "./components/Empenhos";
 import { Fazendas } from "./components/Fazendas";
 import { HarvestAreas } from "./components/HarvestAreas";
 import { ExternalSitesAdmin } from "./components/ExternalSitesAdmin";
@@ -64,6 +65,7 @@ function appScreenTitle(
   if (page.kind === "users") return "Usuários e permissões";
   if (page.kind === "manage") return "Gerenciar abas";
   if (page.kind === "activities") return "Atividades";
+  if (page.kind === "empenhos") return "Empenhos";
   if (page.kind === "fazendas") return "Fazendas";
   if (page.kind === "materials") return "Materiais";
   if (page.kind === "costObjects") return "Objetos de custo";
@@ -202,9 +204,11 @@ export function App() {
                   ? "Ocultar ou excluir abas gravadas no SQLite."
                   : page.kind === "activities"
                     ? "Cadastro de atividades com código, descrição e empenho."
-                    : page.kind === "fazendas"
-                      ? "Cadastro de fazendas com código, descrição e distância. Importe de agricola.fazenda no Oracle."
-                      : page.kind === "materials"
+                    : page.kind === "empenhos"
+                      ? "Importe empenhos do banco para consultar código e descrição localmente."
+                      : page.kind === "fazendas"
+                        ? "Cadastro de fazendas com código, descrição e distância. Importe de agricola.fazenda no Oracle."
+                        : page.kind === "materials"
                         ? "Cadastro de materiais com código, tipo, grupo, valor e empenho. Importe de material.material no Oracle."
                         : page.kind === "costObjects"
                           ? "Cadastro de objetos de custo usados nas linhas dos centros."
@@ -276,6 +280,7 @@ export function App() {
           {page.kind === "users" ? <UsersAdmin /> : null}
           {page.kind === "manage" ? <SheetManager /> : null}
           {page.kind === "activities" ? <Activities /> : null}
+          {page.kind === "empenhos" ? <Empenhos /> : null}
           {page.kind === "fazendas" ? <Fazendas /> : null}
           {page.kind === "materials" ? <Materials /> : null}
           {page.kind === "costObjects" ? <CostObjects /> : null}

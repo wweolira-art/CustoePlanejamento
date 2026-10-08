@@ -39,6 +39,7 @@ function resolveEditPermission(req: Request): string | null | undefined {
   if (path.startsWith("/api/funcionario-orcamento")) return "tab:autoCalc";
 
   if (path.startsWith("/api/activities")) return "page:activities";
+  if (path.startsWith("/api/empenhos")) return "page:empenhos";
   if (path.startsWith("/api/materials")) return "page:materials";
   if (path.startsWith("/api/fazendas")) return "page:fazendas";
   if (path.startsWith("/api/cost-objects")) return "page:costObjects";

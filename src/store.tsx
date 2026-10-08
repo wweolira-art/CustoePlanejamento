@@ -17,6 +17,7 @@ type Page =
   | { kind: "costPlanning"; view: CostPlanningView }
   | { kind: "manage" }
   | { kind: "activities" }
+  | { kind: "empenhos" }
   | { kind: "fazendas" }
   | { kind: "materials" }
   | { kind: "costObjects" }

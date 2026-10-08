@@ -250,13 +250,30 @@ function numberOrTextCode(value: string | number | null | undefined) {
   return /^\d+$/.test(raw) ? Number(raw) : raw;
 }
 
+function foldImportText(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isFuncionarioImportCategory(name: string | null | undefined) {
+  const text = foldImportText(name);
+  return text.includes("despesa") && text.includes("funcionario");
+}
+
 function activityImportCode(activities: Activity[], line: LineItem) {
-  const code = activities.find((activity) => activity.id === line.activity_id)?.code;
+  const code = activities.find((activity) => activity.id === line.activity_id)?.empenho;
   return numberOrTextCode(code);
 }
 
-function subempenhoImportCode(line: LineItem) {
+function subempenhoImportCode(activities: Activity[], line: LineItem) {
   const product = String(line.product_code ?? "").trim();
+  if (line.item_type === "E" && product) return `E${product}`;
+
+  const activityCode = activities.find((activity) => activity.id === line.activity_id)?.code?.trim();
+  if (activityCode) return `G${activityCode}`;
+
   if (!product) return "";
   const type = line.item_type === "E" || line.item_type === "G" ? line.item_type : "";
   return `${type}${product}`;
@@ -275,6 +292,7 @@ function lineCanExport(line: LineItem, parentIds: Set<number>) {
 function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: number[]) {
   const rows: Array<Record<string, string | number | null>> = [];
   for (const category of data.categories) {
+    if (isFuncionarioImportCategory(category.name)) continue;
     const parentIds = new Set(
       category.lines
         .map((line) => line.parent_id)
@@ -289,7 +307,7 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
         OBJETOCUSTO: numberOrTextCode(line.object_code ?? data.name),
         ITEMCUSTO: "",
         EMPENHO: activityImportCode(activities, line),
-        SUBEMPENHO: subempenhoImportCode(line),
+        SUBEMPENHO: subempenhoImportCode(activities, line),
         OBSERVACAO: line.description,
         ANOMESINI: monthKeys[0],
         ANOMESFIM: "",
@@ -304,10 +322,7 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
   return rows;
 }
 
-function exportImportWorkbook(data: SheetDetail, activities: Activity[], safraCode?: string | null) {
-  const monthKeys = safraImportMonths(safraCode);
-  const headers = [...IMPORT_FIXED_COLUMNS, ...monthKeys.map(String)];
-  const rows = buildImportRows(data, activities, monthKeys);
+function writeImportWorkbook(rows: Array<Record<string, string | number | null>>, headers: string[], fileName: string) {
   if (!rows.length) throw new Error("Não há linhas com valor mensal para exportar.");
 
   const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -318,9 +333,25 @@ function exportImportWorkbook(data: SheetDetail, activities: Activity[], safraCo
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Import");
+  XLSX.writeFile(workbook, fileName);
+}
+
+function exportImportWorkbook(data: SheetDetail, activities: Activity[], safraCode?: string | null) {
+  const monthKeys = safraImportMonths(safraCode);
+  const headers = [...IMPORT_FIXED_COLUMNS, ...monthKeys.map(String)];
+  const rows = buildImportRows(data, activities, monthKeys);
   const safeSheet = data.name.replace(/[\\/:*?"<>|]+/g, "-").trim() || "orcamento";
   const safeSafra = String(safraCode ?? "safra").replace(/[\\/:*?"<>|]+/g, "-").trim();
-  XLSX.writeFile(workbook, `Importacao_Planejamento_Tecnica_${safeSheet}_${safeSafra}.xlsx`);
+  writeImportWorkbook(rows, headers, `Importacao_Planejamento_Tecnica_${safeSheet}_${safeSafra}.xlsx`);
+  return rows.length;
+}
+
+function exportAllImportWorkbook(details: SheetDetail[], activities: Activity[], safraCode?: string | null) {
+  const monthKeys = safraImportMonths(safraCode);
+  const headers = [...IMPORT_FIXED_COLUMNS, ...monthKeys.map(String)];
+  const rows = details.flatMap((detail) => buildImportRows(detail, activities, monthKeys));
+  const safeSafra = String(safraCode ?? "safra").replace(/[\\/:*?"<>|]+/g, "-").trim();
+  writeImportWorkbook(rows, headers, `Importacao_Planejamento_Tecnica_Todos_Centros_${safeSafra}.xlsx`);
   return rows.length;
 }
 
@@ -1500,6 +1531,7 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
   const [reconcileObcBusy, setReconcileObcBusy] = useState(false);
   const [reconcileObcErr, setReconcileObcErr] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportAllBusy, setExportAllBusy] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -1599,19 +1631,29 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
           {reconcileObcBusy ? "Repartindo…" : "Repartir equipamentos por OBC"}
         </button>
         <button
-          className="btn"
-          title="Baixar um Excel no layout de importação do Planejamento Técnico"
-          onClick={() => {
+          className="btn primary"
+          disabled={exportAllBusy}
+          title="Baixar um Excel no layout de importação do Planejamento Técnico com todos os centros de custo"
+          onClick={async () => {
             setExportMessage(null);
+            setExportAllBusy(true);
             try {
-              const count = exportImportWorkbook(data, activities, safra?.code);
-              setExportMessage(`${count} linha${count === 1 ? "" : "s"} exportada${count === 1 ? "" : "s"} para o Excel de importação.`);
+              const centers = sheets.filter((sheet) => sheet.kind === "cost_center" && sheet.visible);
+              const details = await Promise.all(
+                centers.map((sheet) => (sheet.id === data.id ? Promise.resolve(data) : api.sheet(sheet.id))),
+              );
+              const count = exportAllImportWorkbook(details, activities, safra?.code);
+              setExportMessage(
+                `${count} linha${count === 1 ? "" : "s"} exportada${count === 1 ? "" : "s"} de ${details.length} centro${details.length === 1 ? "" : "s"} de custo.`,
+              );
             } catch (e) {
               setExportMessage(e instanceof Error ? e.message : "Não foi possível gerar o Excel.");
+            } finally {
+              setExportAllBusy(false);
             }
           }}
         >
-          Gerar Excel de importação
+          {exportAllBusy ? "Gerando Excel…" : "Gerar Excel de importação"}
         </button>
         {materialActivityIds.length ? (
           <button

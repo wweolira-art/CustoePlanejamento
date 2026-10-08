@@ -2,13 +2,13 @@ import type { CostPlanningView, Page } from "../store";
 import type { ExternalSiteGroup, SheetInfo } from "../api";
 import { isSidebarSiteGroup } from "../api";
 import { nativeTabsForGroup } from "./nativeEmbedTabs";
-import { IS_CUSTO_APP } from "./appFlavor";
 
 export const PERMISSION_ADMIN = "admin";
 export const PERMISSION_USERS_ADMIN = "admin:users";
 
 export const PAGE_PERMISSIONS = [
   { key: "page:activities", label: "Atividades", pageKind: "activities" as const },
+  { key: "page:empenhos", label: "Empenhos", pageKind: "empenhos" as const },
   { key: "page:fazendas", label: "Fazendas", pageKind: "fazendas" as const },
   { key: "page:materials", label: "Materiais", pageKind: "materials" as const },
   { key: "page:costObjects", label: "Objetos de custo", pageKind: "costObjects" as const },
@@ -26,6 +26,7 @@ export const PAGE_PERMISSIONS = [
 /** Cadastros que saem com o app de Custo e Planejamento. */
 export const COST_CADASTRO_PAGE_KINDS = new Set<(typeof PAGE_PERMISSIONS)[number]["pageKind"]>([
   "activities",
+  "empenhos",
   "materials",
   "costObjects",
   "categories",
@@ -323,19 +324,16 @@ export function canAccessPage(
   siteGroups: ExternalSiteGroup[] = [],
 ) {
   if (page.kind === "costPlanning") {
-    if (!IS_CUSTO_APP) return false;
     if (!hasAnyCostPlanningAccess(permissions)) return false;
     return canAccessCostPlanningView(permissions, page.view);
   }
   if (page.kind === "siteGroup") {
     const group = siteGroups.find((row) => row.id === page.groupId);
     if (group?.nativeKey === "cost-planning") {
-      if (!IS_CUSTO_APP) return false;
       if (!canAccessCostPlanningSiteGroup(permissions, page.groupId, siteGroups)) return false;
       if (page.costView) return canAccessCostPlanningView(permissions, page.costView);
       return true;
     }
-    if (IS_CUSTO_APP) return false;
     if (!canAccessSiteGroup(permissions, page.groupId)) return false;
     if (page.tabKey) return canAccessNativeTab(permissions, group, page.tabKey);
     if (page.itemId && group) return canAccessGroupItem(permissions, group, page.itemId);
@@ -343,7 +341,6 @@ export function canAccessPage(
   }
   const match = PAGE_PERMISSIONS.find((row) => row.pageKind === page.kind);
   if (!match) return true;
-  if (!IS_CUSTO_APP && COST_CADASTRO_PAGE_KINDS.has(match.pageKind)) return false;
   return canAccess(permissions, match.key);
 }
 
@@ -352,10 +349,8 @@ export function firstAllowedPage(
   sheets: SheetInfo[],
   siteGroups: ExternalSiteGroup[],
 ): Page {
-  const custoApp = IS_CUSTO_APP;
   const costPlanningGroup = siteGroups.find((group) => group.nativeKey === "cost-planning");
   if (
-    custoApp &&
     costPlanningGroup &&
     canAccessCostPlanningSiteGroup(permissions, costPlanningGroup.id, siteGroups)
   ) {
@@ -372,18 +367,15 @@ export function firstAllowedPage(
     return { kind: "siteGroup", groupId: costPlanningGroup.id };
   }
   const sidebarGroup = siteGroups.filter(isSidebarSiteGroup).find((item) => {
-    if (custoApp) return item.nativeKey === "cost-planning" && canAccessSiteGroup(permissions, item.id);
-    if (item.nativeKey === "cost-planning") return false;
     return canAccessSiteGroup(permissions, item.id);
   });
-  if (!custoApp && sidebarGroup) return { kind: "siteGroup", groupId: sidebarGroup.id };
+  if (sidebarGroup) return { kind: "siteGroup", groupId: sidebarGroup.id };
   for (const row of PAGE_PERMISSIONS) {
-    if (!custoApp && COST_CADASTRO_PAGE_KINDS.has(row.pageKind)) continue;
     if (canAccess(permissions, row.key)) return { kind: row.pageKind };
   }
   if (sidebarGroup) return { kind: "siteGroup", groupId: sidebarGroup.id };
-  if (custoApp && costPlanningGroup) return { kind: "siteGroup", groupId: costPlanningGroup.id };
-  return { kind: custoApp ? "activities" : "safras" };
+  if (costPlanningGroup) return { kind: "siteGroup", groupId: costPlanningGroup.id };
+  return { kind: "activities" };
 }
 
 export function setViewPermission(selected: string[], viewKey: string, enabled: boolean) {

@@ -3,6 +3,7 @@ export const PERMISSION_USERS_ADMIN = "admin:users";
 
 export const PAGE_PERMISSIONS = [
   { key: "page:activities", label: "Atividades" },
+  { key: "page:empenhos", label: "Empenhos" },
   { key: "page:fazendas", label: "Fazendas" },
   { key: "page:materials", label: "Materiais" },
   { key: "page:costObjects", label: "Objetos de custo" },
