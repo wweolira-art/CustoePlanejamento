@@ -10581,6 +10581,15 @@ html[data-theme="dark"] .gm-root .gm-metas-btn.active {
   max-width: 28rem;
 }
 
+.contract-control-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  color: var(--muted);
+}
+
 .contract-control-table tfoot td {
   background: var(--head-blue-strong);
   font-weight: 700;

@@ -13,6 +13,7 @@ import {
 } from "../api";
 
 const money = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const OCCURRENCE_PAGE_SIZE = 500;
 
 function fornecedorLabel(codigo: number | null | undefined, descricao: string) {
   if (codigo == null) return descricao;
@@ -168,6 +169,7 @@ export function ContractControl() {
   const [grupos, setGrupos] = useState<ContractSupplierGroup[]>([]);
   const [grupoNome, setGrupoNome] = useState("");
   const [grupoAtivo, setGrupoAtivo] = useState<number | null>(null);
+  const [ocorrenciasVisiveis, setOcorrenciasVisiveis] = useState(OCCURRENCE_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -237,10 +239,18 @@ export function ContractControl() {
     if (!ocorrenciaFiltro) return rows;
     return rows.filter((row) => normalize(row.observacao).includes(ocorrenciaFiltro));
   }, [ocorrencias, ocorrenciaFiltro]);
+  const ocorrenciaRowsVisiveis = useMemo(
+    () => ocorrenciaRows.slice(0, ocorrenciasVisiveis),
+    [ocorrenciaRows, ocorrenciasVisiveis],
+  );
   const ocorrenciaTotal = useMemo(
     () => ocorrenciaRows.reduce((sum, row) => sum + row.valor, 0),
     [ocorrenciaRows],
   );
+
+  useEffect(() => {
+    setOcorrenciasVisiveis(OCCURRENCE_PAGE_SIZE);
+  }, [ocorrencias, ocorrenciaFiltro]);
 
   const grupoPorFornecedor = useMemo(() => {
     const map = new Map<number, string>();
@@ -493,7 +503,7 @@ export function ContractControl() {
               </tr>
             </thead>
             <tbody>
-              {ocorrenciaRows.map((row) => (
+              {ocorrenciaRowsVisiveis.map((row) => (
                 <tr key={`${row.documento}-${row.parcela}-${row.sequencia ?? 0}-${row.ocorrencia}`}>
                   <td>{fornecedorLabel(row.fornecedorCodigo, row.fornecedor)}</td>
                   <td>{row.documento}</td>
@@ -530,6 +540,20 @@ export function ContractControl() {
               </tfoot>
             ) : null}
           </table>
+          {ocorrenciaRows.length > ocorrenciaRowsVisiveis.length ? (
+            <div className="contract-control-more no-print">
+              <span>
+                Mostrando {ocorrenciaRowsVisiveis.length} de {ocorrenciaRows.length} ocorrências.
+              </span>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setOcorrenciasVisiveis((current) => current + OCCURRENCE_PAGE_SIZE)}
+              >
+                Carregar mais
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
       <div className="table-wrap contract-control-wrap">

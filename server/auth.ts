@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { loadEnvFile } from "./oracle.js";
 import { getUserPermissions } from "./user-permissions.js";
 
 export type AuthUser = {
@@ -44,6 +45,7 @@ function buildUsuarioBody(
 }
 
 function usuarioCollectionUrl() {
+  loadEnvFile();
   const direct = process.env.ORDS_USUARIO_URL?.trim();
   if (direct) return direct.replace(/\/?$/, "/");
   const base = process.env.ORDS_BASE_URL?.trim();

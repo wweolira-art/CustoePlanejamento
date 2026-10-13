@@ -93,6 +93,8 @@ export type ContractOccurrenceReport = {
   total: number;
 };
 
+type RawOccurrenceRow = Omit<ContractOccurrenceRow, "fornecedor">;
+
 function parseIds(value: unknown) {
   const raw = Array.isArray(value) ? value.join(",") : String(value ?? "");
   const ids = raw
@@ -350,11 +352,10 @@ export async function loadContractControl(input: {
   return { from, to, rows, totals: totalsOf(rows) };
 }
 
-function occurrenceOf(record: Record<string, unknown>): ContractOccurrenceRow {
+function occurrenceOf(record: Record<string, unknown>): RawOccurrenceRow {
   const documento = oracleNumber(record, "documento", "DOCUMENTO");
   return {
     fornecedorCodigo: oracleNumber(record, "cod_fornecedor", "COD_FORNECEDOR"),
-    fornecedor: oracleText(record, "fornecedor", "FORNECEDOR") || "SEM FORNECEDOR",
     documento: documento == null ? oracleText(record, "documento", "DOCUMENTO") : String(documento),
     parcela: oracleNumber(record, "parcela", "PARCELA") ?? 0,
     sequencia: oracleNumber(record, "sequencia", "SEQUENCIA"),
@@ -381,40 +382,51 @@ export async function loadContractOccurrences(input: {
   };
   const fornecedorSql = inClause("p.cod_fornecedor", fornecedores, "forn", binds);
 
-  const rows = await withOracle(async (conn) => {
-    const result = await conn.execute(
-      `SELECT p.cod_fornecedor,
-              NVL(f.razaosocial, 'SEM FORNECEDOR') fornecedor,
-              p.documento,
-              p.parcela,
-              o.sequenciabaixa sequencia,
-              NVL(c.descricao, 'SEM OCORRÊNCIA') ocorrencia,
-              o.observacao,
-              TO_CHAR(o.datacriacao, 'YYYY-MM-DD') data_ocorrencia,
-              NVL(o.valorfinalpgto, NVL(o.valor, 0)) valor
-         FROM financeiro.ocorrenciaparcelascontaspagar o
-         JOIN financeiro.parcelascontaspagar p
-           ON p.cod_grupoempresa = o.cod_grupoempresa
-          AND p.cod_tipocontaspagar = o.cod_tipocontaspagar
-          AND p.documento = o.documento
-          AND p.parcela = o.parcela
-         LEFT JOIN financeiro.ocorrenciacontaspagar c
-           ON c.cod_ocorrenciacontaspagar = o.cod_ocorrenciacontaspagar
-         LEFT JOIN (
-           SELECT cod_fornecedor, MAX(razaosocial) razaosocial
-             FROM material.vw_parceironegocio
-            GROUP BY cod_fornecedor
-         ) f ON f.cod_fornecedor = p.cod_fornecedor
-        WHERE o.cod_grupoempresa = :grupo
-          AND o.datacriacao >= TO_DATE(:ini, 'YYYY-MM-DD')
-          AND o.datacriacao < TO_DATE(:fim, 'YYYY-MM-DD') + 1
-          ${fornecedorSql}
-        ORDER BY fornecedor, data_ocorrencia, p.documento, p.parcela, ocorrencia`,
-      binds,
-      { maxRows: 20000, fetchArraySize: 2000 },
+  const [rawRows, names] = await Promise.all([
+    withOracle(async (conn) => {
+      const result = await conn.execute(
+        `SELECT p.cod_fornecedor,
+                p.documento,
+                p.parcela,
+                o.sequenciabaixa sequencia,
+                NVL(c.descricao, 'SEM OCORRÊNCIA') ocorrencia,
+                o.observacao,
+                TO_CHAR(o.datacriacao, 'YYYY-MM-DD') data_ocorrencia,
+                NVL(o.valorfinalpgto, NVL(o.valor, 0)) valor
+           FROM financeiro.ocorrenciaparcelascontaspagar o
+           JOIN financeiro.parcelascontaspagar p
+             ON p.cod_grupoempresa = o.cod_grupoempresa
+            AND p.cod_tipocontaspagar = o.cod_tipocontaspagar
+            AND p.documento = o.documento
+            AND p.parcela = o.parcela
+           LEFT JOIN financeiro.ocorrenciacontaspagar c
+             ON c.cod_ocorrenciacontaspagar = o.cod_ocorrenciacontaspagar
+          WHERE o.cod_grupoempresa = :grupo
+            AND o.datacriacao >= TO_DATE(:ini, 'YYYY-MM-DD')
+            AND o.datacriacao < TO_DATE(:fim, 'YYYY-MM-DD') + 1
+            ${fornecedorSql}
+          ORDER BY p.cod_fornecedor, data_ocorrencia, p.documento, p.parcela, ocorrencia`,
+        binds,
+        { maxRows: 20000, fetchArraySize: 2000 },
+      );
+      return (result.rows ?? []).map((row) => occurrenceOf(row as Record<string, unknown>));
+    }, input.signal),
+    supplierNames(),
+  ]);
+
+  const rows = rawRows
+    .map((row) => ({
+      ...row,
+      fornecedor: row.fornecedorCodigo == null ? "SEM FORNECEDOR" : (names.get(row.fornecedorCodigo) ?? "SEM FORNECEDOR"),
+    }))
+    .sort(
+      (a, b) =>
+        a.fornecedor.localeCompare(b.fornecedor, "pt-BR") ||
+        a.data.localeCompare(b.data) ||
+        a.documento.localeCompare(b.documento, "pt-BR", { numeric: true }) ||
+        a.parcela - b.parcela ||
+        a.ocorrencia.localeCompare(b.ocorrencia, "pt-BR"),
     );
-    return (result.rows ?? []).map((row) => occurrenceOf(row as Record<string, unknown>));
-  }, input.signal);
 
   return {
     from,
