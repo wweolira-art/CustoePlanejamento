@@ -42,15 +42,15 @@ export function Activities() {
   return (
     <div className="page">
       <p className="lead">
-        Cadastre as atividades da safra com código, descrição e empenho. O empenho define a qual
-        classificação cada atividade pertence; o R$/ha muda a cada safra e fica na tela de cálculo
-        automático. Você também pode importar atividades de planejamento.subempgenerico no Oracle.
+        Cadastre os subempenhos da safra com código, descrição e empenho. O empenho define a qual
+        classificação cada subempenho pertence; o R$/ha muda a cada safra e fica na tela de cálculo
+        automático. Você também pode importar subempenhos de planejamento.subempgenerico no Oracle.
       </p>
 
       <ReadOnlyFieldset>
 
       <section className="panel">
-        <h3>Nova atividade</h3>
+        <h3>Novo subempenho</h3>
         <div className="form-grid">
           <label>
             Código
@@ -87,7 +87,7 @@ export function Activities() {
               }
             }}
           >
-            Cadastrar atividade
+            Cadastrar subempenho
           </button>
           <button className="btn" onClick={() => setImportOpen(true)}>
             Importar do Oracle
@@ -97,7 +97,7 @@ export function Activities() {
 
       <section className="panel">
         <h3>
-          Atividades cadastradas
+          Subempenhos cadastrados
           <small>{query.trim() ? `${filtered.length} de ${rows.length}` : rows.length}</small>
         </h3>
         <div className="form-grid" style={{ gridTemplateColumns: "1fr", paddingBottom: 8 }}>
@@ -144,7 +144,7 @@ export function Activities() {
                     className="icon-btn"
                     title="Excluir"
                     onClick={async () => {
-                      if (!confirm(`Excluir a atividade ${row.code}?`)) return;
+                      if (!confirm(`Excluir o subempenho ${row.code}?`)) return;
                       await api.deleteActivity(row.id);
                       await load();
                     }}
@@ -157,7 +157,7 @@ export function Activities() {
             {!filtered.length ? (
               <tr>
                 <td className="left" colSpan={4}>
-                  Nenhuma atividade encontrada.
+                  Nenhum subempenho encontrado.
                 </td>
               </tr>
             ) : null}
@@ -250,7 +250,7 @@ function ImportOracleActivities({
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 820 }}>
-        <h3>Importar atividades do Oracle</h3>
+        <h3>Importar subempenhos do Oracle</h3>
         <p className="lead" style={{ margin: "0 0 8px" }}>
           Consulta planejamento.subempgenerico. As que já existem no cadastro ficam marcadas e não
           entram de novo.
@@ -319,7 +319,7 @@ function ImportOracleActivities({
                 {!filtered.length ? (
                   <tr>
                     <td className="left" colSpan={5}>
-                      Nenhuma atividade encontrada.
+                      Nenhum subempenho encontrado.
                     </td>
                   </tr>
                 ) : null}
@@ -348,7 +348,7 @@ function ImportOracleActivities({
               }
             }}
           >
-            {saving ? "Importando…" : `Importar ${selectedCount} atividade${selectedCount === 1 ? "" : "s"}`}
+            {saving ? "Importando…" : `Importar ${selectedCount} subempenho${selectedCount === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>

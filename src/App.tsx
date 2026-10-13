@@ -64,7 +64,7 @@ function appScreenTitle(
   if (page.kind === "externalSites") return "Sites incorporados";
   if (page.kind === "users") return "Usuários e permissões";
   if (page.kind === "manage") return "Gerenciar abas";
-  if (page.kind === "activities") return "Atividades";
+  if (page.kind === "activities") return "Subempenho";
   if (page.kind === "empenhos") return "Empenhos";
   if (page.kind === "fazendas") return "Fazendas";
   if (page.kind === "materials") return "Materiais";
@@ -203,7 +203,7 @@ export function App() {
                 : page.kind === "manage"
                   ? "Ocultar ou excluir abas gravadas no SQLite."
                   : page.kind === "activities"
-                    ? "Cadastro de atividades com código, descrição e empenho."
+                    ? "Cadastro de subempenhos com código, descrição e empenho."
                     : page.kind === "empenhos"
                       ? "Importe empenhos do banco para consultar código e descrição localmente."
                       : page.kind === "fazendas"

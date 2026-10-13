@@ -7,7 +7,7 @@ export const PERMISSION_ADMIN = "admin";
 export const PERMISSION_USERS_ADMIN = "admin:users";
 
 export const PAGE_PERMISSIONS = [
-  { key: "page:activities", label: "Atividades", pageKind: "activities" as const },
+  { key: "page:activities", label: "Subempenho", pageKind: "activities" as const },
   { key: "page:empenhos", label: "Empenhos", pageKind: "empenhos" as const },
   { key: "page:fazendas", label: "Fazendas", pageKind: "fazendas" as const },
   { key: "page:materials", label: "Materiais", pageKind: "materials" as const },

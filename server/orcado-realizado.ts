@@ -9,6 +9,7 @@ import { fetchUnRealizadoUnitsBySheet } from "./un-realizado.js";
 import { aggregateCompare, zeros, type CompareViewRow, type RealizadoObject } from "../src/lib/reportAggregate.ts";
 
 const SAFRA_MONTHS = [8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7];
+const GRUPOS_SEM_DETALHE_ITEM_CUSTO = new Set([219, 222, 224, 225]);
 
 type RealizadoRule = {
   sheetName: string;
@@ -69,6 +70,16 @@ function subprocessoFromRaw(raw: Record<string, unknown>) {
         ? `Negócio ${negocio} / Processo ${processo}`
         : `Negócio ${negocio} / Processo ${processo} / Subprocesso ${subprocesso}`,
   };
+}
+
+function operationalDetailLabel(raw: Record<string, unknown>, fallback: string) {
+  return (
+    matchSheetName(
+      oracleNumber(raw, "negocio"),
+      oracleNumber(raw, "processo"),
+      oracleNumber(raw, "subprocesso"),
+    ) ?? fallback
+  );
 }
 
 function addInto(target: number[], extra: number[]) {
@@ -263,7 +274,20 @@ async function fetchRealizado(anomesFrom: number, anomesTo: number) {
   });
 }
 
-async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number) {
+async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number, filters?: { grupoKey?: string; empenhoKey?: string }) {
+  const binds: Record<string, string | number> = { anomesFrom, anomesTo };
+  const grupo = Number(filters?.grupoKey);
+  const empenho = Number(filters?.empenhoKey);
+  const grupoEmpenhoSql: string[] = [];
+  if (Number.isFinite(grupo)) {
+    binds.grupoKey = grupo;
+    grupoEmpenhoSql.push("AND ge.cod_grupoempenho = :grupoKey");
+  }
+  if (Number.isFinite(empenho)) {
+    binds.empenhoKey = empenho;
+    grupoEmpenhoSql.push("AND emp.cod_empenho = :empenhoKey");
+  }
+  const grupoEmpenhoWhere = grupoEmpenhoSql.length ? `\n             ${grupoEmpenhoSql.join("\n             ")}` : "";
   const agricolaSql = `NOT EXISTS (
               SELECT 1
                 FROM custo.objetocusto b
@@ -302,6 +326,7 @@ async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number) {
            WHERE a.anomes BETWEEN :anomesFrom AND :anomesTo
              AND a.tipo IN ('O', 'R')
              AND emp.cod_tipoempenho IN (1, 2)
+             ${grupoEmpenhoWhere}
            GROUP BY ge.cod_grupoempenho, ge.descricao, emp.cod_empenho, emp.descricao,
                  oc.negocio, oc.processo, oc.subprocesso, a.anomes
       ),
@@ -330,6 +355,7 @@ async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number) {
            WHERE a.anomes BETWEEN :anomesFrom AND :anomesTo
              AND a.tipo IN ('O', 'R')
              AND emp.cod_tipoempenho IN (1, 2)
+             ${grupoEmpenhoWhere}
            GROUP BY ge.cod_grupoempenho, emp.cod_empenho,
                  oc.negocio, oc.processo, oc.subprocesso, a.anomes,
                  COALESCE(NULLIF(TRIM(ic.descricao), ''), emp.descricao, 'Lançamento integrado')
@@ -425,6 +451,7 @@ async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number) {
             LEFT JOIN custo.objetocusto oc
               ON oc.cod_objetocusto = od.cod_objetocusto
            WHERE emp.cod_tipoempenho IN (1, 2)
+             ${grupoEmpenhoWhere}
            GROUP BY ge.cod_grupoempenho, ge.descricao, emp.cod_empenho, emp.descricao,
                  oc.negocio, oc.processo, oc.subprocesso,
                  od.origem_tipo, od.origem_doc, od.origem_descricao, od.anomes
@@ -498,6 +525,54 @@ async function fetchGrupoGastoOracle(anomesFrom: number, anomesTo: number) {
            OR ABS(l.realizado - NVL(o.realizado, 0)) > 0.005
            OR l.orcado_agricola <> 0
            OR ABS(l.realizado_agricola - NVL(o.realizado_agricola, 0)) > 0.005`,
+      binds,
+    );
+    return (result.rows ?? []) as Record<string, unknown>[];
+  });
+}
+
+async function fetchGrupoGastoResumoOracle(anomesFrom: number, anomesTo: number) {
+  const agricolaSql = `NOT EXISTS (
+              SELECT 1
+                FROM custo.objetocusto b
+               WHERE b.negocio = 5
+                 AND b.processo IN (3, 4)
+                 AND oc.cod_objetocusto = b.cod_objetocusto
+          )
+          AND NOT EXISTS (
+              SELECT 1
+                FROM custo.objetocusto d
+               WHERE d.negocio IN (2, 98, 90, 6, 99, 8, 7)
+                 AND oc.cod_objetocusto = d.cod_objetocusto
+          )`;
+  return withOracle(async (conn) => {
+    const result = await conn.execute(
+      `SELECT ge.cod_grupoempenho,
+              ge.descricao,
+              emp.cod_empenho,
+              emp.descricao AS empenho_descricao,
+              NULL AS negocio,
+              NULL AS processo,
+              NULL AS subprocesso,
+              'Resumo' AS origem_tipo,
+              'Resumo' AS origem_doc,
+              emp.descricao AS origem_descricao,
+              a.anomes,
+              NVL(SUM(CASE WHEN a.tipo = 'O' THEN a.valor ELSE 0 END), 0) AS orcado,
+              NVL(SUM(CASE WHEN a.tipo = 'R' THEN a.valor ELSE 0 END), 0) AS realizado,
+              NVL(SUM(CASE WHEN a.tipo = 'O' AND ${agricolaSql} THEN a.valor ELSE 0 END), 0) AS orcado_agricola,
+              NVL(SUM(CASE WHEN a.tipo = 'R' AND ${agricolaSql} THEN a.valor ELSE 0 END), 0) AS realizado_agricola
+         FROM custo.lancamento_custo a
+         JOIN custo.empenho emp
+           ON emp.cod_empenho = a.cod_empenho
+         JOIN custo.grupoempenho ge
+           ON ge.cod_grupoempenho = emp.cod_grupoempenho
+         LEFT JOIN custo.objetocusto oc
+           ON oc.cod_objetocusto = a.cod_objetocusto
+        WHERE a.anomes BETWEEN :anomesFrom AND :anomesTo
+          AND a.tipo IN ('O', 'R')
+          AND emp.cod_tipoempenho IN (1, 2)
+        GROUP BY ge.cod_grupoempenho, ge.descricao, emp.cod_empenho, emp.descricao, a.anomes`,
       { anomesFrom, anomesTo },
     );
     return (result.rows ?? []) as Record<string, unknown>[];
@@ -508,6 +583,7 @@ function buildGrupoGastoRows(
   oracleRows: Record<string, unknown>[],
   startYear: number,
   fields: { orcado: string; realizado: string } = { orcado: "orcado", realizado: "realizado" },
+  options: { includeDetails?: boolean; grupoKey?: string; empenhoKey?: string } = {},
 ): CompareViewRow[] {
   const map = new Map<string, CompareViewRow>();
   const sourceMap = new Map<string, Map<string, CompareViewRow>>();
@@ -554,11 +630,16 @@ function buildGrupoGastoRows(
     const origemTipo = oracleText(raw, "origem_tipo") || "Lançamento de custo";
     const origemDoc = oracleText(raw, "origem_doc") || "Lançamento ERP";
     const origemDescricao = oracleText(raw, "origem_descricao") || "Detalhe de origem não localizado";
-    const itemKey = `${subprocesso.key}|${origemTipo}|${origemDoc}|${origemDescricao}`;
+    const consolidarSemItemCusto = cod != null && GRUPOS_SEM_DETALHE_ITEM_CUSTO.has(cod) && origemTipo === "Origem financeira";
+    const itemKey = consolidarSemItemCusto
+      ? `${subprocesso.key}|${origemTipo}`
+      : `${subprocesso.key}|${origemTipo}|${origemDoc}|${origemDescricao}`;
     const itemLabel =
-      origemTipo === "Contrato variável" || origemTipo === "Origem financeira"
-        ? origemDescricao
-        : `${origemDoc} — ${origemDescricao}`;
+      consolidarSemItemCusto
+        ? operationalDetailLabel(raw, subprocesso.label)
+        : origemTipo === "Contrato variável" || origemTipo === "Origem financeira"
+          ? origemDescricao
+          : `${origemDoc} — ${origemDescricao}`;
     const groupDetails = detailMap.get(key) ?? new Map<string, Map<string, CompareViewRow>>();
     const empenhoDetails = groupDetails.get(empenhoKey) ?? new Map<string, CompareViewRow>();
     const item =
@@ -602,7 +683,8 @@ function buildGrupoGastoRows(
           const childRealizadoTotal = money(sumMonths(child.realizado));
           const childVariacao = child.orcado.map((value, i) => money((child.realizado[i] ?? 0) - value));
           const childKey = child.key.replace(new RegExp(`^empenho-${groupKey}-`), "");
-          const childSources = [...(detailMap.get(groupKey)?.get(childKey)?.values() ?? [])]
+          const childSources = options.includeDetails
+            ? [...(detailMap.get(groupKey)?.get(childKey)?.values() ?? [])]
             .map((item) => {
               const itemOrcadoTotal = money(sumMonths(item.orcado));
               const itemRealizadoTotal = money(sumMonths(item.realizado));
@@ -616,7 +698,8 @@ function buildGrupoGastoRows(
               };
             })
             .filter((item) => item.orcadoTotal || item.realizadoTotal)
-            .sort((a, b) => Math.abs(b.realizadoTotal) - Math.abs(a.realizadoTotal) || a.label.localeCompare(b.label, "pt-BR"));
+            .sort((a, b) => Math.abs(b.realizadoTotal) - Math.abs(a.realizadoTotal) || a.label.localeCompare(b.label, "pt-BR"))
+            : undefined;
           return {
             ...child,
             orcadoTotal: childOrcadoTotal,
@@ -638,7 +721,40 @@ function buildGrupoGastoRows(
       };
     })
     .filter((row) => row.orcadoTotal || row.realizadoTotal)
+    .filter((row) => !options.grupoKey || row.key === `grupo-${options.grupoKey}`)
+    .map((row) =>
+      options.empenhoKey
+        ? {
+            ...row,
+            sources: (row.sources ?? []).filter((child) => child.key === `empenho-${options.grupoKey}-${options.empenhoKey}`),
+          }
+        : row,
+    )
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+}
+
+export async function orcadoRealizadoGrupoGastoDetalhe(options: {
+  safraId?: number | null;
+  grupoKey?: unknown;
+  empenhoKey?: unknown;
+  agricola?: unknown;
+}) {
+  const harvestId = resolveSafraId(options.safraId);
+  const safra = db.prepare("SELECT code FROM safras WHERE id = ?").get(harvestId) as { code: string } | undefined;
+  const startYear = safra ? safraStartYear(safra.code) : new Date().getFullYear();
+  const { from: anomesFrom, to: anomesTo } = anomesRange(startYear);
+  const grupoKey = String(options.grupoKey ?? "").replace(/^grupo-/, "").trim();
+  const empenhoKey = String(options.empenhoKey ?? "").replace(/^empenho-[^-]+-/, "").trim();
+  if (!grupoKey || !empenhoKey) throw new Error("Informe o grupo e o empenho para carregar o detalhe.");
+  const rows = buildGrupoGastoRows(
+    await fetchGrupoGastoOracle(anomesFrom, anomesTo, { grupoKey, empenhoKey }),
+    startYear,
+    String(options.agricola ?? "") === "1" || String(options.agricola ?? "").toLowerCase() === "true"
+      ? { orcado: "orcado_agricola", realizado: "realizado_agricola" }
+      : { orcado: "orcado", realizado: "realizado" },
+    { includeDetails: true, grupoKey, empenhoKey },
+  );
+  return rows[0]?.sources?.[0]?.sources ?? [];
 }
 
 export async function orcadoRealizado(options?: { safraId?: number | null }) {
@@ -669,7 +785,7 @@ export async function orcadoRealizado(options?: { safraId?: number | null }) {
   const [oracleRows, realizadoByActivity, grupoGastoRows] = await Promise.all([
     fetchRealizado(fetchRange.from, fetchRange.to),
     fetchActivityRealizado({ safraId: harvestId, startYear }),
-    fetchGrupoGastoOracle(anomesFrom, anomesTo),
+    fetchGrupoGastoResumoOracle(anomesFrom, anomesTo),
   ]);
   const grupoGasto = buildGrupoGastoRows(grupoGastoRows, startYear);
   const grupoGastoAgricola = buildGrupoGastoRows(grupoGastoRows, startYear, {

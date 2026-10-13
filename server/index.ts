@@ -45,7 +45,7 @@ import { saveSafraKpis } from "./safra-kpis.js";
 import { dashboard, listSheets, listValueDistributions, persistAllValues, persistLineValues, premissasKpis, resumo, setSheetVerified, sheetDetail } from "./calc.js";
 import { aggregateResumo } from "../src/lib/reportAggregate.ts";
 import { invalidateWorkbook } from "./workbook-from-db.js";
-import { orcadoRealizado } from "./orcado-realizado.js";
+import { orcadoRealizado, orcadoRealizadoGrupoGastoDetalhe } from "./orcado-realizado.js";
 import { getOrcamentoExterno } from "./externo-orcamento.js";
 import {
   importFuncionarioOrcamento,
@@ -1195,6 +1195,25 @@ app.get("/api/orcado-realizado", async (req, res) => {
   } catch (e) {
     res.status(500).json({
       error: e instanceof Error ? e.message : "Não foi possível montar o orçado x realizado.",
+    });
+  }
+});
+
+app.get("/api/orcado-realizado/grupo-gasto-detalhes", async (req, res) => {
+  try {
+    const raw = req.query.safraId;
+    const safraId = raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+    res.json({
+      rows: await orcadoRealizadoGrupoGastoDetalhe({
+        safraId: Number.isFinite(safraId) ? safraId : null,
+        grupoKey: req.query.grupoKey,
+        empenhoKey: req.query.empenhoKey,
+        agricola: req.query.agricola,
+      }),
+    });
+  } catch (e) {
+    res.status(500).json({
+      error: e instanceof Error ? e.message : "Não foi possível carregar o detalhe do grupo de gasto.",
     });
   }
 });

@@ -449,6 +449,8 @@ function OrcadoRealizadoDashboard({
   const [filterSearch, setFilterSearch] = useState("");
   const [openGrupos, setOpenGrupos] = useState<string[]>([]);
   const [openEmpenhos, setOpenEmpenhos] = useState<string[]>([]);
+  const [loadedEmpenhoDetails, setLoadedEmpenhoDetails] = useState<Record<string, CompareRow[]>>({});
+  const [loadingEmpenhoDetails, setLoadingEmpenhoDetails] = useState<Record<string, boolean>>({});
   const sourceRows =
     selectedNegocio === "agricola" ? (report.grupoGastoAgricola ?? rows) : rows;
   const normalizedFilterSearch = searchText(filterSearch.trim());
@@ -515,6 +517,29 @@ function OrcadoRealizadoDashboard({
   const totalOrcado = dashRows.reduce((sum, row) => sum + getOrcado(row), 0);
   const totalRealizado = dashRows.reduce((sum, row) => sum + getRealizado(row), 0);
   const sobra = totalOrcado - totalRealizado;
+
+  function toggleGrupo(row: CompareRow) {
+    setOpenGrupos((current) => toggleKey(current, row.key));
+  }
+
+  async function toggleEmpenhoDetalhe(group: CompareRow, child: CompareRow, childOpen: boolean) {
+    setOpenEmpenhos((current) => toggleKey(current, child.key));
+    if (childOpen || loadedEmpenhoDetails[child.key] || loadingEmpenhoDetails[child.key]) return;
+    const grupoKey = group.key.replace(/^grupo-/, "");
+    const empenhoKey = child.key.replace(new RegExp(`^empenho-${grupoKey}-`), "");
+    setLoadingEmpenhoDetails((current) => ({ ...current, [child.key]: true }));
+    try {
+      const result = await api.orcadoRealizadoGrupoGastoDetalhes({
+        safraId: report.safraId,
+        grupoKey,
+        empenhoKey,
+        agricola: selectedNegocio === "agricola",
+      });
+      setLoadedEmpenhoDetails((current) => ({ ...current, [child.key]: result.rows }));
+    } finally {
+      setLoadingEmpenhoDetails((current) => ({ ...current, [child.key]: false }));
+    }
+  }
 
   return (
     <section className="orc-dashboard">
@@ -661,7 +686,7 @@ function OrcadoRealizadoDashboard({
                                   type="button"
                                   className="icon-btn fold-btn"
                                   title={isOpen ? "Ocultar empenhos" : "Ver empenhos"}
-                                  onClick={() => setOpenGrupos((current) => toggleKey(current, row.key))}
+                                  onClick={() => toggleGrupo(row)}
                                 >
                                   {isOpen ? "▾" : "▸"}
                                 </button>
@@ -686,21 +711,22 @@ function OrcadoRealizadoDashboard({
                               const childRealizado = getRealizado(child);
                               const childVariacao = childRealizado - childOrcado;
                               const childPct = childOrcado ? (childVariacao / Math.abs(childOrcado)) * 100 : 0;
-                              const detalhes = (child.sources ?? []).filter(hasCompareAmount);
+                              const detalhes = (loadedEmpenhoDetails[child.key] ?? child.sources ?? []).filter(hasCompareAmount);
+                              const loadingDetalhes = Boolean(loadingEmpenhoDetails[child.key]);
                               const childOpen = openEmpenhos.includes(child.key);
                               return (
                                 <Fragment key={child.key}>
                                   <tr className="orc-dashboard-empenho-row">
                                     <td>
                                       <span className="orc-dashboard-tree-label">
-                                        {detalhes.length ? (
+                                        {hasCompareAmount(child) ? (
                                           <button
                                             type="button"
                                             className="icon-btn fold-btn"
                                             title={childOpen ? "Ocultar detalhes" : "Ver detalhes do empenho"}
-                                            onClick={() => setOpenEmpenhos((current) => toggleKey(current, child.key))}
+                                            onClick={() => void toggleEmpenhoDetalhe(row, child, childOpen)}
                                           >
-                                            {childOpen ? "▾" : "▸"}
+                                            {loadingDetalhes ? "…" : childOpen ? "▾" : "▸"}
                                           </button>
                                         ) : (
                                           <span className="tree-spacer" />
@@ -719,7 +745,11 @@ function OrcadoRealizadoDashboard({
                                       <CmpAmount delta={childVariacao}>{formatBRL(childVariacao)}</CmpAmount>
                                     </td>
                                   </tr>
-                                  {childOpen
+                                  {childOpen && loadingDetalhes ? (
+                                    <tr className="orc-dashboard-detalhe-row">
+                                      <td colSpan={5}>Carregando detalhes...</td>
+                                    </tr>
+                                  ) : childOpen
                                     ? detalhes.map((detalhe) => {
                                         const detalheOrcado = getOrcado(detalhe);
                                         const detalheRealizado = getRealizado(detalhe);

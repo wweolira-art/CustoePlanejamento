@@ -2501,6 +2501,17 @@ export const api = {
     const q = params?.safraId ? `?safraId=${params.safraId}` : "";
     return get<OrcadoRealizadoData>(`/api/orcado-realizado${q}`);
   },
+  orcadoRealizadoGrupoGastoDetalhes: (params: {
+    safraId?: number;
+    grupoKey: string;
+    empenhoKey: string;
+    agricola?: boolean;
+  }) => {
+    const q = new URLSearchParams({ grupoKey: params.grupoKey, empenhoKey: params.empenhoKey });
+    if (params.safraId) q.set("safraId", String(params.safraId));
+    if (params.agricola) q.set("agricola", "1");
+    return get<{ rows: CompareRow[] }>(`/api/orcado-realizado/grupo-gasto-detalhes?${q}`);
+  },
   seedTransportOptions: () => get<SeedTransportOptions>("/api/seed-transport-report/options"),
   seedTransportTalhoes: (codFazenda: number | string) =>
     get<{ talhoes: Array<{ codigo: number | null }> }>(
