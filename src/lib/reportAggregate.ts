@@ -57,6 +57,8 @@ export type CompareViewRow = {
   sheetId?: number;
   origin?: boolean;
   orcadoAnnualOnly?: boolean;
+  subprocessoKey?: string;
+  subprocessoLabel?: string;
   tons?: number;
   orcado: number[];
   realizado: number[];

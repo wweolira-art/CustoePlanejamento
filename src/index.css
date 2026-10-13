@@ -805,6 +805,7 @@ table.data.resumo th.month-realizado {
 table.data.resumo td.realizado-col {
   background: #fff;
   color: #0a1f3d;
+  font-weight: 700;
 }
 html[data-theme="dark"] table.data.resumo.orcado-realizado th {
   background: var(--head-blue-strong);
@@ -825,6 +826,7 @@ html[data-theme="dark"] table.data.resumo th.month-realizado {
 html[data-theme="dark"] table.data.resumo td.realizado-col {
   background: #f4f7fc;
   color: #0a1f3d;
+  font-weight: 700;
 }
 .orcado-realizado-wrap {
   overflow-x: auto;
@@ -1045,7 +1047,8 @@ table.data.resumo.orcado-realizado.comparativo tbody td.realizado-col {
   letter-spacing: 0.02em;
 }
 
-.orc-dashboard-filters select {
+.orc-dashboard-filters select,
+.orc-dashboard-filters input {
   width: 100%;
   min-width: 0;
   height: 32px;
@@ -1054,6 +1057,14 @@ table.data.resumo.orcado-realizado.comparativo tbody td.realizado-col {
   color: #0a1f3d;
   font-weight: 600;
   padding: 0 28px 0 8px;
+}
+
+.orc-dashboard-filters input {
+  padding-right: 8px;
+}
+
+.orc-dashboard-filter-search {
+  background: #f8fbff !important;
 }
 
 .orc-dashboard-main {
@@ -1170,6 +1181,50 @@ table.data.resumo.orcado-realizado.comparativo tbody td.realizado-col {
 .orc-dashboard-table td:first-child {
   text-align: left;
   color: #0a1f3d;
+}
+
+.orc-dashboard-tree-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.orc-dashboard-empenho-row td:first-child {
+  padding-left: 30px;
+  color: #314562;
+  font-weight: 600;
+}
+
+.orc-dashboard-empenho-row td:first-child::before {
+  content: "Empenho";
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #d5e0ee;
+  color: #0a1f3d;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.orc-dashboard-detalhe-row td:first-child {
+  padding-left: 58px;
+  color: #445872;
+  font-weight: 600;
+}
+
+.orc-dashboard-detalhe-row td:first-child::before {
+  content: "Detalhe";
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #e7edf6;
+  color: #314562;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .orc-dashboard-table tbody tr:nth-child(even) {
@@ -3131,6 +3186,9 @@ table.data.resumo th.month-group {
   margin-top: 18px;
   overflow-x: auto;
 }
+.dashboard-tabs.kind-toggle {
+  padding: 0 0 12px;
+}
 .ficha-estagio-tabela {
   width: 100%;
   border-collapse: collapse;
@@ -3168,12 +3226,31 @@ table.data.resumo th.month-group {
 }
 .ficha-estagio-print-bar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ficha-estagio-tabs.kind-toggle {
+  padding: 0;
+}
+.ficha-estagio-resumo-tabela td.num,
+.ficha-estagio-resumo-tabela th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ficha-estagio-resumo-total td {
+  background: #eef6e8;
+  font-weight: 700;
 }
 .ficha-estagio-print-header {
   display: none;
 }
 @media print {
+  body.print-ficha-estagio .ficha-estagio-print-bar {
+    display: none !important;
+  }
   body.print-ficha-estagio .estagio-producao,
   body.print-ficha-estagio .panel,
   body.print-ficha-estagio .cost-planning-hub > *:not(.ficha-estagio) {
@@ -3359,6 +3436,7 @@ table.data.resumo th.month-group {
 .estagio-producao-table .estagio-preco td,
 .estagio-producao-table .estagio-margem td {
   background: #e6e6e6;
+  color: #142018;
 }
 .estagio-parametros table {
   width: 100%;

@@ -45,9 +45,19 @@ function buildUsuarioBody(
 
 function usuarioCollectionUrl() {
   const direct = process.env.ORDS_USUARIO_URL?.trim();
+  if (direct && /seu-host/i.test(direct)) {
+    throw new Error("Configure ORDS_USUARIO_URL no .env com a URL real da API de usuários.");
+  }
   if (direct) return direct.replace(/\/?$/, "/");
   const base = process.env.ORDS_BASE_URL?.trim();
-  if (base) return `${base.replace(/\/?$/, "")}/usuario/`;
+  if (base && /seu-host/i.test(base)) {
+    throw new Error("Configure ORDS_BASE_URL no .env com a URL real da API ORDS.");
+  }
+  if (base) {
+    const normalized = base.replace(/\/?$/, "");
+    if (/\/usuario$/i.test(normalized)) return `${normalized}/`;
+    return `${normalized}/usuario/`;
+  }
   throw new Error("Configure ORDS_USUARIO_URL ou ORDS_BASE_URL no .env.");
 }
 
@@ -64,7 +74,7 @@ export function withUserPermissions(user: Omit<AuthUser, "permissions">): AuthUs
 }
 
 async function fetchOrdUsers(): Promise<OrdsUsuario[]> {
-  const res = await fetch(usuarioCollectionUrl(), { headers: { Accept: "application/json" } });
+  const res = await fetchUsuarioOrds(usuarioCollectionUrl());
   if (!res.ok) {
     throw new Error(`API de usuários retornou ${res.status}: ${await readOrdsError(res)}`);
   }
@@ -222,13 +232,25 @@ async function fetchUsuarioByEmail(email: string): Promise<OrdsUsuario | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
   const url = `${usuarioCollectionUrl()}?q=${encodeURIComponent(JSON.stringify({ email: normalized }))}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const res = await fetchUsuarioOrds(url);
   if (!res.ok) {
     throw new Error(`API de usuários retornou ${res.status}: ${await readOrdsError(res)}`);
   }
   const data = (await res.json()) as { items?: OrdsUsuario[] };
   const hit = (data.items ?? []).find((row) => String(row.email ?? "").trim().toLowerCase() === normalized);
   return hit ?? null;
+}
+
+async function fetchUsuarioOrds(url: string, init?: RequestInit) {
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    });
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(`Não foi possível conectar à API de usuários ORDS. Verifique ORDS_BASE_URL/ORDS_USUARIO_URL no .env. Detalhe: ${detail}`);
+  }
 }
 
 async function touchLastLogin(user: OrdsUsuario) {

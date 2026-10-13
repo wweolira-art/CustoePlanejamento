@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5174,
-      strictPort: true,
+      strictPort: false,
       open: true,
       // Permite acesso via ngrok / túnel público (Vite 6+ bloqueia hosts desconhecidos por padrão)
       allowedHosts: true,

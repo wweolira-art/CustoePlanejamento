@@ -140,6 +140,13 @@ function hasVisibleCompareValue(row: CompareRow) {
   );
 }
 
+function searchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function SummaryCells({
   row,
   unitsOrcado,
@@ -395,6 +402,28 @@ function fmtDashAmount(n: number) {
   return Math.round(n || 0).toLocaleString("pt-BR");
 }
 
+function recalcCompareRow(row: CompareRow, months: string[], sources?: CompareRow[]): CompareRow {
+  const baseRows = sources ?? row.sources ?? [];
+  const orcado = months.map((_, index) => baseRows.reduce((sum, child) => sum + (child.orcado[index] ?? 0), 0));
+  const realizado = months.map((_, index) => baseRows.reduce((sum, child) => sum + (child.realizado[index] ?? 0), 0));
+  const orcadoTotal = moneySum(orcado);
+  const realizadoTotal = moneySum(realizado);
+  return {
+    ...row,
+    sources: baseRows,
+    orcado,
+    realizado,
+    variacao: realizado.map((value, index) => value - (orcado[index] ?? 0)),
+    orcadoTotal,
+    realizadoTotal,
+    variacaoTotal: realizadoTotal - orcadoTotal,
+  };
+}
+
+function moneySum(values: number[]) {
+  return values.reduce((sum, value) => sum + (value || 0), 0);
+}
+
 function OrcadoRealizadoDashboard({
   report,
   rows,
@@ -415,23 +444,90 @@ function OrcadoRealizadoDashboard({
   negocioOptions: { key: string; label: string }[];
 }) {
   const [selectedGrupo, setSelectedGrupo] = useState("");
+  const [selectedEmpenho, setSelectedEmpenho] = useState("");
+  const [selectedSubprocesso, setSelectedSubprocesso] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [openGrupos, setOpenGrupos] = useState<string[]>([]);
+  const [openEmpenhos, setOpenEmpenhos] = useState<string[]>([]);
   const sourceRows =
     selectedNegocio === "agricola" ? (report.grupoGastoAgricola ?? rows) : rows;
-  const dashRows = sourceRows
+  const normalizedFilterSearch = searchText(filterSearch.trim());
+  const optionMatchesSearch = (label: string) =>
+    !normalizedFilterSearch || searchText(label).includes(normalizedFilterSearch);
+  const empenhoOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of sourceRows) {
+      for (const child of row.sources ?? []) {
+        if (hasCompareAmount(child) && !seen.has(child.key)) seen.set(child.key, child.label);
+      }
+    }
+    return [...seen.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [sourceRows]);
+  const visibleEmpenhoOptions = empenhoOptions.filter((item) => optionMatchesSearch(item.label));
+  const visibleNegocioOptions = negocioOptions.filter((item) => optionMatchesSearch(item.label));
+  const subprocessoOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of sourceRows) {
+      for (const empenho of row.sources ?? []) {
+        for (const detail of empenho.sources ?? []) {
+          if (detail.subprocessoKey && hasCompareAmount(detail) && !seen.has(detail.subprocessoKey)) {
+            seen.set(detail.subprocessoKey, detail.subprocessoLabel || detail.subprocessoKey);
+          }
+        }
+      }
+    }
+    return [...seen.entries()]
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR", { numeric: true }));
+  }, [sourceRows]);
+  const visibleSubprocessoOptions = subprocessoOptions.filter((item) => optionMatchesSearch(item.label));
+  const filteredSourceRows = useMemo(() => {
+    if (!selectedEmpenho && !selectedSubprocesso) return sourceRows;
+    return sourceRows
+      .map((row) => {
+        const sources = (row.sources ?? [])
+          .filter((child) => !selectedEmpenho || child.key === selectedEmpenho)
+          .map((child) => {
+            if (!selectedSubprocesso) return child;
+            const details = (child.sources ?? []).filter(
+              (detail) => detail.subprocessoKey === selectedSubprocesso && hasCompareAmount(detail),
+            );
+            if (!details.length) return null;
+            return recalcCompareRow(child, report.months, details);
+          })
+          .filter((child): child is CompareRow => child != null && hasCompareAmount(child));
+        if (!sources.length) return null;
+        return recalcCompareRow(row, report.months, sources.map((source) => ({ ...source, sources: source.sources ?? [] })));
+      })
+      .filter((row): row is CompareRow => row != null);
+  }, [sourceRows, selectedEmpenho, selectedSubprocesso, report.months]);
+  const dashRows = filteredSourceRows
     .filter(hasCompareAmount)
     .filter((row) => !selectedGrupo || row.key === selectedGrupo);
+  const visibleGrupoOptions = filteredSourceRows
+    .filter(hasCompareAmount)
+    .filter((row) => optionMatchesSearch(row.label));
   const getOrcado = (row: CompareRow) => (selectedMonth == null ? row.orcadoTotal : row.orcado[selectedMonth] ?? 0);
   const getRealizado = (row: CompareRow) =>
     selectedMonth == null ? row.realizadoTotal : row.realizado[selectedMonth] ?? 0;
   const totalOrcado = dashRows.reduce((sum, row) => sum + getOrcado(row), 0);
   const totalRealizado = dashRows.reduce((sum, row) => sum + getRealizado(row), 0);
   const sobra = totalOrcado - totalRealizado;
-  const ano = String(report.anomesFrom || "").slice(0, 4) || "Todos";
 
   return (
     <section className="orc-dashboard">
       <aside className="orc-dashboard-filters">
         <div className="orc-dashboard-filter-title">FILTROS</div>
+        <label className="orc-dashboard-filter-search">
+          <span>PESQUISAR FILTROS</span>
+          <input
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            placeholder="Digite para procurar..."
+          />
+        </label>
         <label>
           <span>UNIDADE</span>
           <select value="" onChange={() => undefined}>
@@ -445,23 +541,25 @@ function OrcadoRealizadoDashboard({
           </select>
         </label>
         <label>
-          <span>ANO/TRIM/MÊS</span>
-          <select
-            value={selectedMonth == null ? "" : String(selectedMonth)}
-            onChange={(e) => onSelectedMonth(e.target.value === "" ? null : Number(e.target.value))}
-          >
-            <option value="">{ano}</option>
-            {report.months.map((month, index) => (
-              <option key={month} value={index}>
-                {month}
+          <span>SUBPROCESSO</span>
+          <select value={selectedSubprocesso} onChange={(e) => setSelectedSubprocesso(e.target.value)}>
+            <option value="">Todos</option>
+            {visibleSubprocessoOptions.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
               </option>
             ))}
           </select>
         </label>
         <label>
-          <span>TIPO/RESPONSÁVEL</span>
-          <select value="" onChange={() => undefined}>
+          <span>EMPENHO</span>
+          <select value={selectedEmpenho} onChange={(e) => setSelectedEmpenho(e.target.value)}>
             <option value="">Todos</option>
+            {visibleEmpenhoOptions.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -470,11 +568,13 @@ function OrcadoRealizadoDashboard({
             value={selectedNegocio}
             onChange={(e) => {
               setSelectedGrupo("");
+              setSelectedEmpenho("");
+              setSelectedSubprocesso("");
               onSelectedNegocio(e.target.value);
             }}
           >
             <option value="">Todos</option>
-            {negocioOptions.map((item) => (
+            {visibleNegocioOptions.map((item) => (
               <option key={item.key} value={item.key}>
                 {item.label}
               </option>
@@ -491,7 +591,7 @@ function OrcadoRealizadoDashboard({
           <span>EMPENHO/GRUPO GASTO</span>
           <select value={selectedGrupo} onChange={(e) => setSelectedGrupo(e.target.value)}>
             <option value="">Todos</option>
-            {sourceRows.filter(hasCompareAmount).map((row) => (
+            {visibleGrupoOptions.map((row) => (
               <option key={row.key} value={row.key}>
                 {row.label}
               </option>
@@ -549,18 +649,104 @@ function OrcadoRealizadoDashboard({
                     const realizado = getRealizado(row);
                     const variacao = realizado - orcado;
                     const pct = orcado ? (variacao / Math.abs(orcado)) * 100 : 0;
+                    const children = (row.sources ?? []).filter(hasCompareAmount);
+                    const isOpen = openGrupos.includes(row.key);
                     return (
-                      <tr key={row.key}>
-                        <td>{row.label}</td>
-                        <td className="orc-col-orcado">{fmtDashAmount(orcado)}</td>
-                        <td className="orc-col-realizado">{fmtDashAmount(realizado)}</td>
-                        <td className={varClass(variacao)}>
-                          {orcado ? `${pct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
-                        </td>
-                        <td className={varClass(variacao)}>
-                          <CmpAmount delta={variacao}>{formatBRL(variacao)}</CmpAmount>
-                        </td>
-                      </tr>
+                      <Fragment key={row.key}>
+                        <tr>
+                          <td>
+                            <span className="orc-dashboard-tree-label">
+                              {children.length ? (
+                                <button
+                                  type="button"
+                                  className="icon-btn fold-btn"
+                                  title={isOpen ? "Ocultar empenhos" : "Ver empenhos"}
+                                  onClick={() => setOpenGrupos((current) => toggleKey(current, row.key))}
+                                >
+                                  {isOpen ? "▾" : "▸"}
+                                </button>
+                              ) : (
+                                <span className="tree-spacer" />
+                              )}
+                              {row.label}
+                            </span>
+                          </td>
+                          <td className="orc-col-orcado">{fmtDashAmount(orcado)}</td>
+                          <td className="orc-col-realizado">{fmtDashAmount(realizado)}</td>
+                          <td className={varClass(variacao)}>
+                            {orcado ? `${pct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
+                          </td>
+                          <td className={varClass(variacao)}>
+                            <CmpAmount delta={variacao}>{formatBRL(variacao)}</CmpAmount>
+                          </td>
+                        </tr>
+                        {isOpen
+                          ? children.map((child) => {
+                              const childOrcado = getOrcado(child);
+                              const childRealizado = getRealizado(child);
+                              const childVariacao = childRealizado - childOrcado;
+                              const childPct = childOrcado ? (childVariacao / Math.abs(childOrcado)) * 100 : 0;
+                              const detalhes = (child.sources ?? []).filter(hasCompareAmount);
+                              const childOpen = openEmpenhos.includes(child.key);
+                              return (
+                                <Fragment key={child.key}>
+                                  <tr className="orc-dashboard-empenho-row">
+                                    <td>
+                                      <span className="orc-dashboard-tree-label">
+                                        {detalhes.length ? (
+                                          <button
+                                            type="button"
+                                            className="icon-btn fold-btn"
+                                            title={childOpen ? "Ocultar detalhes" : "Ver detalhes do empenho"}
+                                            onClick={() => setOpenEmpenhos((current) => toggleKey(current, child.key))}
+                                          >
+                                            {childOpen ? "▾" : "▸"}
+                                          </button>
+                                        ) : (
+                                          <span className="tree-spacer" />
+                                        )}
+                                        {child.label}
+                                      </span>
+                                    </td>
+                                    <td className="orc-col-orcado">{fmtDashAmount(childOrcado)}</td>
+                                    <td className="orc-col-realizado">{fmtDashAmount(childRealizado)}</td>
+                                    <td className={varClass(childVariacao)}>
+                                      {childOrcado
+                                        ? `${childPct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
+                                        : "—"}
+                                    </td>
+                                    <td className={varClass(childVariacao)}>
+                                      <CmpAmount delta={childVariacao}>{formatBRL(childVariacao)}</CmpAmount>
+                                    </td>
+                                  </tr>
+                                  {childOpen
+                                    ? detalhes.map((detalhe) => {
+                                        const detalheOrcado = getOrcado(detalhe);
+                                        const detalheRealizado = getRealizado(detalhe);
+                                        const detalheVariacao = detalheRealizado - detalheOrcado;
+                                        const detalhePct = detalheOrcado ? (detalheVariacao / Math.abs(detalheOrcado)) * 100 : 0;
+                                        return (
+                                          <tr key={detalhe.key} className="orc-dashboard-detalhe-row">
+                                            <td>{detalhe.label}</td>
+                                            <td className="orc-col-orcado">{fmtDashAmount(detalheOrcado)}</td>
+                                            <td className="orc-col-realizado">{fmtDashAmount(detalheRealizado)}</td>
+                                            <td className={varClass(detalheVariacao)}>
+                                              {detalheOrcado
+                                                ? `${detalhePct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
+                                                : "—"}
+                                            </td>
+                                            <td className={varClass(detalheVariacao)}>
+                                              <CmpAmount delta={detalheVariacao}>{formatBRL(detalheVariacao)}</CmpAmount>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    : null}
+                                </Fragment>
+                              );
+                            })
+                          : null}
+                      </Fragment>
                     );
                   })}
                   <tr className="orc-dashboard-total">

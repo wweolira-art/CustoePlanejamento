@@ -17,6 +17,9 @@ type Campos = {
   areaArrendada: string;
   moagemLj: string;
   tonelagemManual: string;
+  atr: string;
+  produtividade: string;
+  precoAtrConsecana: string;
 };
 
 type Origem = "vazio" | "extraido" | "armazenado";
@@ -52,6 +55,21 @@ const CAMPOS: { key: keyof Campos; label: string; motivo: string }[] = [
     label: "Tonelagem manual (t)",
     motivo: "Toneladas colhidas no manual. Divide o R$/t da coluna Manual em Custo colheita.",
   },
+  {
+    key: "atr",
+    label: "ATR",
+    motivo: "ATR médio informado para o período. Usado como referência técnica do estágio de produção.",
+  },
+  {
+    key: "produtividade",
+    label: "Produtividade (t/há)",
+    motivo: "Produtividade técnica informada para o período.",
+  },
+  {
+    key: "precoAtrConsecana",
+    label: "Preço ATR Consecana AL/SE (R$/t)",
+    motivo: "Preço de ATR aplicável ao contrato e período. Alimenta a linha Preço estimado e a Margem.",
+  },
 ];
 
 function anomesToInput(n: number) {
@@ -78,6 +96,9 @@ function camposDe(row: ParametrosTecnicos): Campos {
     areaArrendada: formatArea(row.areaArrendada),
     moagemLj: formatArea(row.moagemLj),
     tonelagemManual: formatArea(row.tonelagemManual),
+    atr: formatArea(row.atr),
+    produtividade: formatArea(row.produtividade),
+    precoAtrConsecana: formatArea(row.precoAtrConsecana),
   };
 }
 
@@ -88,6 +109,9 @@ const CAMPOS_VAZIOS: Campos = {
   areaArrendada: "",
   moagemLj: "",
   tonelagemManual: "",
+  atr: "",
+  produtividade: "",
+  precoAtrConsecana: "",
 };
 
 function ParametrosTecnicosCard({
@@ -114,7 +138,6 @@ function ParametrosTecnicosCard({
   const plantio = parseArea(campos.areaPlantio);
   const soca = parseArea(campos.areaSoca);
   const areaTotal = (Number.isFinite(plantio) ? plantio : 0) + (Number.isFinite(soca) ? soca : 0);
-  const produtividade = moagem != null && areaTotal > 0 ? moagem / areaTotal : null;
   const aviso =
     origem === "extraido"
       ? `Áreas extraídas de ${periodoExtracao?.inicio ?? "—"} a ${periodoExtracao?.fim ?? "—"}. Edite se precisar e clique em Armazenar.`
@@ -164,13 +187,6 @@ function ParametrosTecnicosCard({
             </th>
             <td>{moagem == null ? "—" : formatArea(moagem)}</td>
           </tr>
-          <tr>
-            <th>
-              Produtividade (t/há)
-              <small>Moagem ÷ área total.</small>
-            </th>
-            <td>{produtividade == null ? "—" : formatArea(produtividade)}</td>
-          </tr>
         </tbody>
       </table>
       <p className="estagio-parametros-nota">{aviso}</p>
@@ -216,6 +232,7 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
         const params: Record<string, string | number> = {
           anomesInicio,
           anomesFim,
+          somenteEstagios: 1,
         };
         if (safraId != null) params.safraId = safraId;
         const data = await api.custoMatrizSubprocesso(params);
@@ -311,6 +328,9 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
       areaArrendada: parseArea(campos.areaArrendada),
       moagemLj: parseArea(campos.moagemLj),
       tonelagemManual: parseArea(campos.tonelagemManual),
+      atr: parseArea(campos.atr),
+      produtividade: parseArea(campos.produtividade),
+      precoAtrConsecana: parseArea(campos.precoAtrConsecana),
     };
     if (Object.values(numeros).some((n) => !Number.isFinite(n))) {
       setParamErr("Informe os valores com números válidos.");
@@ -345,8 +365,10 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
     const soca = parseArea(campos.areaSoca);
     const irrigacao = parseArea(campos.areaIrrigacao);
     const arrendada = parseArea(campos.areaArrendada);
-    if ([plantio, soca, irrigacao, arrendada].some((n) => !Number.isFinite(n))) return null;
-    return { plantio, soca, irrigacao, arrendada };
+    const atr = parseArea(campos.atr);
+    const precoAtrConsecana = parseArea(campos.precoAtrConsecana);
+    if ([plantio, soca, irrigacao, arrendada, atr, precoAtrConsecana].some((n) => !Number.isFinite(n))) return null;
+    return { plantio, soca, irrigacao, arrendada, atr, precoAtrConsecana };
   }, [origem, campos]);
 
   const moagem = matriz?.estagios?.parametros?.toneladas ?? matriz?.estagios?.toneladas ?? null;

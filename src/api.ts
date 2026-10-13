@@ -848,6 +848,8 @@ export interface CompareRow {
   sheetId?: number;
   origin?: boolean;
   orcadoAnnualOnly?: boolean;
+  subprocessoKey?: string;
+  subprocessoLabel?: string;
   tons?: number;
   orcado: number[];
   realizado: number[];
@@ -2321,6 +2323,9 @@ export interface ParametrosTecnicos {
   areaArrendada: number;
   moagemLj: number;
   tonelagemManual: number;
+  atr: number;
+  produtividade: number;
+  precoAtrConsecana: number;
   anomesInicio: string | null;
   anomesFim: string | null;
   updatedAt: string | null;
@@ -2983,6 +2988,9 @@ export const api = {
     areaArrendada: number;
     moagemLj: number;
     tonelagemManual: number;
+    atr: number;
+    produtividade: number;
+    precoAtrConsecana: number;
     anomesInicio: string;
     anomesFim: string;
   }) => send<ParametrosTecnicos>("/api/parametros-tecnicos", "PUT", body),

@@ -14,6 +14,7 @@ import { VerifiedMark } from "./Sidebar";
 import { useSafraLoaded } from "./SafraLoadProgress";
 
 type CompareView = "costCenter" | "category";
+type DashboardView = "geral" | "orcamentoResumido";
 
 function safraPeriodo(code: string | undefined) {
   const match = (code ?? "").match(/^(\d{2})\//);
@@ -48,6 +49,7 @@ export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const [selectedCenters, setSelectedCenters] = useState<string[]>([]);
   const [selectedNegocios, setSelectedNegocios] = useState<string[]>([]);
   const [view, setView] = useState<CompareView>("costCenter");
+  const [dashboardView, setDashboardView] = useState<DashboardView>("geral");
   const [areasFicha, setAreasFicha] = useState({ plantio: 0, soca: 0, moagemLj: 0 });
   const periodoFicha = safraPeriodo(safra?.code);
 
@@ -209,12 +211,32 @@ export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
 
   return (
     <PageShell embedded={embedded}>
-      <FichaCustoEstagio
-        areaPlantio={areasFicha.plantio}
-        areaSoca={areasFicha.soca}
-        moagemLj={areasFicha.moagemLj}
-        subtitulo={[safra?.label, `${periodoFicha.inicio} a ${periodoFicha.fim}`].filter(Boolean).join(" · ")}
-      />
+      <div className="kind-toggle dashboard-tabs">
+        <button
+          type="button"
+          className={`btn ${dashboardView === "geral" ? "primary" : ""}`}
+          onClick={() => setDashboardView("geral")}
+        >
+          Visão geral
+        </button>
+        <button
+          type="button"
+          className={`btn ${dashboardView === "orcamentoResumido" ? "primary" : ""}`}
+          onClick={() => setDashboardView("orcamentoResumido")}
+        >
+          Orçamento resumido
+        </button>
+      </div>
+      {dashboardView === "orcamentoResumido" ? (
+        <FichaCustoEstagio
+          areaPlantio={areasFicha.plantio}
+          areaSoca={areasFicha.soca}
+          moagemLj={areasFicha.moagemLj}
+          subtitulo={[safra?.label, `${periodoFicha.inicio} a ${periodoFicha.fim}`].filter(Boolean).join(" · ")}
+          defaultView="resumida"
+        />
+      ) : (
+      <>
       <div className="kpis">
         <div className="kpi"><span>Moagem</span><strong>{formatQty(moagem)} t</strong></div>
         <div className="kpi"><span>TCH</span><strong>{formatQty(kpis.tch)}</strong></div>
@@ -458,6 +480,8 @@ export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
           </table>
         </div>
       </section>
+      </>
+      )}
     </PageShell>
   );
 }
