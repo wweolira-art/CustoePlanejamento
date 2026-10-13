@@ -891,6 +891,26 @@ function montarMatriz(linhas, ha, tons, totalPool = 0) {
   };
 }
 
+function montarSomenteEstagios(linhas, ha, tons, totalPool = 0) {
+  const estagioValores = estagiosVazios();
+  for (const lin of linhas) {
+    if (!(Math.abs(lin.valor) > 0.0001)) continue;
+    if (isCustoIrrigacao(lin)) {
+      estagioValores.irrigacao += lin.valor;
+      continue;
+    }
+    const col = colunaDestino(lin);
+    if (!col) {
+      acumularDestinoSemColuna(estagioValores, lin, lin.valor);
+      continue;
+    }
+    acumularEstagio(estagioValores, classificarLinha(lin), col, lin.destProcesso, lin, lin.valor);
+  }
+  return {
+    estagios: montarEstagiosProducao(estagioValores, ha, tons, totalPool),
+  };
+}
+
 const MATRIZ_CACHE_MS = 120_000;
 const matrizCache = new Map();
 const matrizInflight = new Map();
@@ -906,19 +926,22 @@ function chaveMatriz(filtros, incluirEstagios) {
     subprocesso: filtros.subprocesso ?? null,
     atividade: filtros.atividade ?? null,
     incluirEstagios,
+    somenteEstagios: filtros.somenteEstagios === true || filtros.somenteEstagios === 1 || filtros.somenteEstagios === '1',
   });
 }
 
 export async function consultarMatrizSubprocesso(filtros = {}) {
   const incluirEstagios =
     filtros.incluirEstagios !== false && filtros.incluirEstagios !== 0 && filtros.incluirEstagios !== '0';
+  const somenteEstagios =
+    filtros.somenteEstagios === true || filtros.somenteEstagios === 1 || filtros.somenteEstagios === '1';
   const key = chaveMatriz(filtros, incluirEstagios);
   const hit = matrizCache.get(key);
   if (hit && hit.expires > Date.now()) return hit.value;
   const pending = matrizInflight.get(key);
   if (pending) return pending;
 
-  const run = calcularMatrizSubprocesso(filtros, incluirEstagios)
+  const run = calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagios)
     .then((value) => {
       matrizCache.set(key, { value, expires: Date.now() + MATRIZ_CACHE_MS });
       while (matrizCache.size > 20) {
@@ -936,7 +959,7 @@ export async function consultarMatrizSubprocesso(filtros = {}) {
   return run;
 }
 
-async function calcularMatrizSubprocesso(filtros, incluirEstagios) {
+async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagios = false) {
   const eff = filtrosEff(filtros);
   const binds = bindsConsulta(filtros);
 
@@ -953,14 +976,37 @@ async function calcularMatrizSubprocesso(filtros, incluirEstagios) {
 
   const linhas = (result.rows || []).map(mapLinha);
   const { unidades, fontes } = unidadesFontes;
-  const matriz = montarMatriz(
-    linhas,
-    unidades,
-    incluirEstagios ? toneladas : 0,
-    incluirEstagios ? totalPool : 0
-  );
+  const matriz =
+    somenteEstagios && incluirEstagios
+      ? montarSomenteEstagios(linhas, unidades, toneladas, totalPool)
+      : montarMatriz(
+          linhas,
+          unidades,
+          incluirEstagios ? toneladas : 0,
+          incluirEstagios ? totalPool : 0
+        );
   if (!incluirEstagios) delete matriz.estagios;
   else if (matriz.estagios) matriz.estagios.parametros = parametrosArea(matriz.estagios);
+  if (somenteEstagios) {
+    return {
+      filtros: {
+        ...eff,
+        negociosConsulta: negociosParaConsulta(eff),
+        negociosSelecionados: normalizeNegocios(filtros),
+      },
+      resumo: {
+        totalPool,
+        totalMatriz: 0,
+        totalForaMatriz: 0,
+        qtdLinhasOracle: linhas.length,
+      },
+      colunas: [],
+      linhas: [],
+      hectareas: {},
+      fontesUnidades: {},
+      ...matriz,
+    };
+  }
   const totalMatriz =
     (matriz.linhas[0]?.celulas?.formacao?.valor || 0) +
     (matriz.linhas[0]?.celulas?.tratos_soca?.valor || 0);

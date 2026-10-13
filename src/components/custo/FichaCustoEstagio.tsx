@@ -19,6 +19,8 @@ type Secao = {
   total: number;
 };
 
+type FichaView = "detalhada" | "resumida";
+
 function num(n: number | null | undefined) {
   if (n == null || !Number.isFinite(n)) return "";
   return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -123,14 +125,17 @@ export function FichaCustoEstagio({
   areaSoca,
   moagemLj,
   subtitulo,
+  defaultView = "detalhada",
 }: {
   areaPlantio: number;
   areaSoca: number;
   moagemLj: number;
   subtitulo?: string;
+  defaultView?: FichaView;
 }) {
   const [secoes, setSecoes] = useState<Secao[]>([]);
   const [erro, setErro] = useState<string | null>(null);
+  const [view, setView] = useState<FichaView>(defaultView);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,9 +155,31 @@ export function FichaCustoEstagio({
   if (erro) return <p className="lead">{erro}</p>;
   if (!secoes.length) return null;
 
+  const totalGeral = secoes.reduce((sum, secao) => sum + secao.total, 0);
+
   return (
     <div className="ficha-estagio">
       <div className="ficha-estagio-print-bar no-print">
+        <div className="kind-toggle ficha-estagio-tabs" role="tablist" aria-label="Visão da ficha de custo">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "detalhada"}
+            className={`btn ${view === "detalhada" ? "primary" : ""}`}
+            onClick={() => setView("detalhada")}
+          >
+            Ficha de custo
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "resumida"}
+            className={`btn ${view === "resumida" ? "primary" : ""}`}
+            onClick={() => setView("resumida")}
+          >
+            Orçamento resumido
+          </button>
+        </div>
         <button type="button" className="btn" onClick={imprimirFicha}>
           Imprimir
         </button>
@@ -165,7 +192,56 @@ export function FichaCustoEstagio({
         </div>
         <div className="liberacao-colheita-brand-right">GRUPO LUIZ JATOBÁ</div>
       </header>
-      {secoes.map((secao) => {
+      {view === "resumida" ? (
+        <section className="ficha-estagio-resumo">
+          <div className="table-wrap">
+            <table className="data resumo ficha-estagio-resumo-tabela">
+              <thead>
+                <tr>
+                  <th className="left">Etapa</th>
+                  <th className="left">Item</th>
+                  <th>Base</th>
+                  <th>R$/base</th>
+                  <th>Orçamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                {secoes.flatMap((secao) => {
+                  const base = secao.semInsumo ? moagemLj : secao.area === "soca" ? areaSoca : areaPlantio;
+                  const baseLabel = secao.semInsumo ? "t" : "ha";
+                  const linhas = gruposPorObjeto(secao.linhas).map((grupo, index) => {
+                    const custo = grupo.reduce((sum, row) => sum + row.custo, 0);
+                    const objeto = grupo[0]?.objeto || grupo[0]?.descricao || "Sem objeto";
+                    return (
+                      <tr key={`${secao.titulo}-resumo-${index}`}>
+                        <td className="left">{secao.titulo}</td>
+                        <td className="left">{objeto}</td>
+                        <td className="num">{base > 0 ? `${num(base)} ${baseLabel}` : "—"}</td>
+                        <td className="num">{num(rHa(custo, base))}</td>
+                        <td className="num">{num(custo)}</td>
+                      </tr>
+                    );
+                  });
+                  return [
+                    ...linhas,
+                    <tr className="ficha-estagio-resumo-total" key={`${secao.titulo}-resumo-total`}>
+                      <td className="left" colSpan={3}>
+                        Total {secao.titulo}
+                      </td>
+                      <td className="num">{num(rHa(secao.total, base))}</td>
+                      <td className="num">{num(secao.total)}</td>
+                    </tr>,
+                  ];
+                })}
+                <tr className="total-geral">
+                  <td className="left" colSpan={4}>Total geral</td>
+                  <td className="num">{num(totalGeral)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : secoes.map((secao) => {
         const colunas = secao.semInsumo ? 8 : 12;
         return (
         <table key={secao.titulo} className="ficha-estagio-tabela">

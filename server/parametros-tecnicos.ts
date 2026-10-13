@@ -11,6 +11,9 @@ export type ParametrosTecnicos = {
   areaArrendada: number;
   moagemLj: number;
   tonelagemManual: number;
+  atr: number;
+  produtividade: number;
+  precoAtrConsecana: number;
   anomesInicio: string | null;
   anomesFim: string | null;
   updatedAt: string | null;
@@ -64,6 +67,15 @@ function ensureParametrosTecnicos() {
   if (!atuais.some((col) => col.name === "tonelagem_manual")) {
     db.exec("ALTER TABLE parametros_tecnicos ADD COLUMN tonelagem_manual REAL NOT NULL DEFAULT 0");
   }
+  if (!atuais.some((col) => col.name === "atr")) {
+    db.exec("ALTER TABLE parametros_tecnicos ADD COLUMN atr REAL NOT NULL DEFAULT 0");
+  }
+  if (!atuais.some((col) => col.name === "produtividade")) {
+    db.exec("ALTER TABLE parametros_tecnicos ADD COLUMN produtividade REAL NOT NULL DEFAULT 0");
+  }
+  if (!atuais.some((col) => col.name === "preco_atr_consecana")) {
+    db.exec("ALTER TABLE parametros_tecnicos ADD COLUMN preco_atr_consecana REAL NOT NULL DEFAULT 0");
+  }
 }
 
 function asArea(raw: unknown, label: string) {
@@ -87,6 +99,9 @@ function vazio(safraId: number, anomesInicio: string | null, anomesFim: string |
     areaArrendada: 0,
     moagemLj: 0,
     tonelagemManual: 0,
+    atr: 0,
+    produtividade: 0,
+    precoAtrConsecana: 0,
     anomesInicio,
     anomesFim,
     updatedAt: null,
@@ -113,6 +128,7 @@ export function lerParametrosTecnicos(
   const row = db
     .prepare(
       `SELECT safra_id, area_plantio, area_soca, area_irrigacao, area_arrendada, moagem_lj, tonelagem_manual,
+              atr, produtividade, preco_atr_consecana,
               anomes_inicio, anomes_fim, updated_at
          FROM parametros_tecnicos
         WHERE safra_id = ?
@@ -128,6 +144,9 @@ export function lerParametrosTecnicos(
         area_arrendada: number;
         moagem_lj: number;
         tonelagem_manual: number;
+        atr: number;
+        produtividade: number;
+        preco_atr_consecana: number;
         anomes_inicio: string | null;
         anomes_fim: string | null;
         updated_at: string;
@@ -142,6 +161,9 @@ export function lerParametrosTecnicos(
     areaArrendada: Number(row.area_arrendada) || 0,
     moagemLj: Number(row.moagem_lj) || 0,
     tonelagemManual: Number(row.tonelagem_manual) || 0,
+    atr: Number(row.atr) || 0,
+    produtividade: Number(row.produtividade) || 0,
+    precoAtrConsecana: Number(row.preco_atr_consecana) || 0,
     anomesInicio: row.anomes_inicio,
     anomesFim: row.anomes_fim,
     updatedAt: row.updated_at,
@@ -167,6 +189,9 @@ export async function extrairParametrosTecnicos(
     areaArrendada: areaArrendadaDaSafra(id),
     moagemLj: guardado.moagemLj,
     tonelagemManual: guardado.tonelagemManual,
+    atr: guardado.atr,
+    produtividade: guardado.produtividade,
+    precoAtrConsecana: guardado.precoAtrConsecana,
     anomesInicio: inicio,
     anomesFim: fim,
     updatedAt: null,
@@ -183,6 +208,9 @@ export function salvarParametrosTecnicos(
     areaArrendada?: unknown;
     moagemLj?: unknown;
     tonelagemManual?: unknown;
+    atr?: unknown;
+    produtividade?: unknown;
+    precoAtrConsecana?: unknown;
     anomesInicio?: unknown;
     anomesFim?: unknown;
   },
@@ -195,13 +223,16 @@ export function salvarParametrosTecnicos(
   const areaArrendada = asArea(body.areaArrendada, "área arrendada");
   const moagemLj = asArea(body.moagemLj, "moagem LJ");
   const tonelagemManual = asArea(body.tonelagemManual, "tonelagem manual");
+  const atr = asArea(body.atr, "ATR");
+  const produtividade = asArea(body.produtividade, "produtividade");
+  const precoAtrConsecana = asArea(body.precoAtrConsecana, "preço do ATR Consecana");
   const anomesInicio = anomesOk(body.anomesInicio);
   const anomesFim = anomesOk(body.anomesFim);
   const updatedAt = new Date().toISOString();
   db.prepare(
     `INSERT INTO parametros_tecnicos (
-       safra_id, anomes_inicio, anomes_fim, area_plantio, area_soca, area_irrigacao, area_arrendada, moagem_lj, tonelagem_manual, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       safra_id, anomes_inicio, anomes_fim, area_plantio, area_soca, area_irrigacao, area_arrendada, moagem_lj, tonelagem_manual, atr, produtividade, preco_atr_consecana, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(safra_id, anomes_inicio, anomes_fim) DO UPDATE SET
        area_plantio = excluded.area_plantio,
        area_soca = excluded.area_soca,
@@ -209,7 +240,10 @@ export function salvarParametrosTecnicos(
        area_arrendada = excluded.area_arrendada,
        moagem_lj = excluded.moagem_lj,
        tonelagem_manual = excluded.tonelagem_manual,
+       atr = excluded.atr,
+       produtividade = excluded.produtividade,
+       preco_atr_consecana = excluded.preco_atr_consecana,
        updated_at = excluded.updated_at`,
-  ).run(id, anomesInicio, anomesFim, areaPlantio, areaSoca, areaIrrigacao, areaArrendada, moagemLj, tonelagemManual, updatedAt);
+  ).run(id, anomesInicio, anomesFim, areaPlantio, areaSoca, areaIrrigacao, areaArrendada, moagemLj, tonelagemManual, atr, produtividade, precoAtrConsecana, updatedAt);
   return lerParametrosTecnicos(id, anomesInicio, anomesFim);
 }

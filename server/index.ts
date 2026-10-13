@@ -1679,6 +1679,9 @@ app.put("/api/parametros-tecnicos", (req, res) => {
       areaArrendada?: unknown;
       moagemLj?: unknown;
       tonelagemManual?: unknown;
+      atr?: unknown;
+      produtividade?: unknown;
+      precoAtrConsecana?: unknown;
       anomesInicio?: unknown;
       anomesFim?: unknown;
     };

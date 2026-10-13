@@ -1,13 +1,7 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type CustoMatrizSubprocessoData } from "../../api";
 import { formatBRL } from "../../lib/format";
 import { useApp } from "../../store";
-import {
-  ArrendamentoCalcFields,
-  emptyArrendamentoCalc,
-  type ArrendamentoCalcResult,
-  type ArrendamentoCalcValue,
-} from "../ArrendamentoCalc";
 import { PrintButton } from "../PrintButton";
 
 const COL_FILL: Record<string, { bg: string; color: string }> = {
@@ -224,7 +218,7 @@ type EstagioLinha = NonNullable<CustoMatrizSubprocessoData["estagios"]>["linhas"
 
 function aplicarAreasEstagio(
   linhas: EstagioLinha[],
-  areas: { plantio: number; soca: number; irrigacao: number; arrendada: number } | null,
+  areas: AreasEstagio | null,
 ): EstagioLinha[] {
   if (!areas) return linhas;
   const total = areas.plantio + areas.soca;
@@ -243,48 +237,38 @@ function aplicarAreasEstagio(
   };
   return linhas.map((row) => {
     const ha = haPorChave[row.chave];
-    if (ha == null || row.valor == null) return row;
-    return { ...row, rHa: ha > 0 ? row.valor / ha : null };
+    const rKgAtr = areas.atr > 0 && row.rTon != null ? row.rTon / areas.atr : row.rKgAtr;
+    if (ha == null || row.valor == null) return { ...row, rKgAtr };
+    return { ...row, rHa: ha > 0 ? row.valor / ha : null, rKgAtr };
   });
 }
 
-function aplicarArrendamento(
-  linhas: EstagioLinha[],
-  result: ArrendamentoCalcResult | null,
-  toneladas: number | null | undefined,
-  areaArrendadaHa: number | null,
-): EstagioLinha[] {
-  if (areaArrendadaHa == null && !result?.ready) return linhas;
-  const tons = toneladas && toneladas > 0 ? toneladas : 0;
-  const area = areaArrendadaHa != null && areaArrendadaHa > 0 ? areaArrendadaHa : 0;
-  const comArrendamento = linhas
-    .filter((row) => row.chave !== "nao_rateado")
-    .map((row) => {
-      if (row.chave !== "arrendamento") return row;
-      const valor = result?.ready ? result.total : row.valor;
+function aplicarPrecoEstimado(linhas: EstagioLinha[], areas: AreasEstagio | null): EstagioLinha[] {
+  if (!areas?.precoAtrConsecana) {
+    return linhas.map((row) => (row.chave === "preco" ? { ...row, label: "Preço estimado" } : row));
+  }
+  const custoTotal = linhas.find((row) => row.chave === "custo_total");
+  const custoTon = custoTotal?.rTon ?? null;
+  const precoTon = areas.precoAtrConsecana;
+  const margemTon = custoTon != null ? precoTon - custoTon : null;
+  const atr = areas.atr > 0 ? areas.atr : 0;
+  return linhas.map((row) => {
+    if (row.chave === "preco") {
       return {
         ...row,
-        valor,
-        rHa: area > 0 && valor != null ? valor / area : null,
-        rTon: tons > 0 && valor != null ? valor / tons : row.rTon,
-      };
-    });
-  const grupos = comArrendamento.filter((row) => row.nivel === "grupo");
-  const totalValor = grupos.reduce((sum, row) => sum + (row.valor || 0), 0);
-  return comArrendamento.map((row) => {
-    if (row.nivel === "preco" || row.nivel === "margem") return row;
-    if (row.nivel === "total") {
-      return {
-        ...row,
-        valor: totalValor,
-        rTon: tons > 0 ? totalValor / tons : null,
-        pct: totalValor > 0 ? 100 : null,
+        label: "Preço estimado",
+        rTon: precoTon,
+        rKgAtr: atr > 0 ? precoTon / atr : null,
       };
     }
-    return {
-      ...row,
-      pct: totalValor > 0 && row.valor != null ? (row.valor / totalValor) * 100 : null,
-    };
+    if (row.chave === "margem") {
+      return {
+        ...row,
+        rTon: margemTon,
+        rKgAtr: atr > 0 && margemTon != null ? margemTon / atr : null,
+      };
+    }
+    return row;
   });
 }
 
@@ -364,7 +348,14 @@ function ParametrosArea({
 
 export type ModoEstagio = "valor" | "rha" | "ambos";
 
-export type AreasEstagio = { plantio: number; soca: number; irrigacao: number; arrendada: number };
+export type AreasEstagio = {
+  plantio: number;
+  soca: number;
+  irrigacao: number;
+  arrendada: number;
+  atr: number;
+  precoAtrConsecana: number;
+};
 
 export function EstagiosProducao({
   data,
@@ -379,16 +370,7 @@ export function EstagiosProducao({
 }) {
   const { safraId } = useApp();
   const baseLinhas = data.estagios?.linhas ?? [];
-  const [calc, setCalc] = useState<ArrendamentoCalcValue>(() => emptyArrendamentoCalc(safraId));
-  const [arrendamento, setArrendamento] = useState<ArrendamentoCalcResult | null>(null);
   const [areaArrendada, setAreaArrendada] = useState<{ ha: number; motivo: string } | null>(null);
-  const onArrendamento = useCallback((next: ArrendamentoCalcResult) => {
-    setArrendamento(next);
-  }, []);
-
-  useEffect(() => {
-    setCalc(emptyArrendamentoCalc(safraId));
-  }, [safraId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -419,24 +401,23 @@ export function EstagiosProducao({
     };
   }, [safraId]);
 
-  const areaUsada = areasArmazenadas ? areasArmazenadas.arrendada : (areaArrendada?.ha ?? null);
   const linhas = useMemo(() => {
     const comAreas = aplicarAreasEstagio(
       baseLinhas.filter((row) => row.chave !== "nao_rateado"),
       areasArmazenadas,
     );
-    const comArrendamento = aplicarArrendamento(comAreas, arrendamento, data.estagios?.toneladas, areaUsada);
     const areaTotal = areasArmazenadas
       ? areasArmazenadas.plantio + areasArmazenadas.soca
       : (data.estagios?.hectares?.planta ?? 0) + (data.estagios?.hectares?.soca ?? 0);
-    return comArrendamento.map((row) => {
+    const comTotal = comAreas.map((row) => {
       if (row.valor == null) return row;
       if (row.nivel === "total") {
         return { ...row, rHa: areaTotal > 0 ? row.valor / areaTotal : null };
       }
       return row;
     });
-  }, [baseLinhas, areasArmazenadas, arrendamento, data.estagios?.toneladas, data.estagios?.hectares?.planta, data.estagios?.hectares?.soca, areaUsada]);
+    return aplicarPrecoEstimado(comTotal, areasArmazenadas);
+  }, [baseLinhas, areasArmazenadas, data.estagios?.hectares?.planta, data.estagios?.hectares?.soca]);
   if (!linhas.length) return null;
   return (
     <div className="estagio-producao">
@@ -473,15 +454,6 @@ export function EstagiosProducao({
           </div>
         </div>
         {painel ?? <ParametrosArea data={data} areaArrendada={areaArrendada} />}
-      </div>
-      <div className="estagio-arrendamento no-print">
-        <h4>Calcular arrendamento</h4>
-        <ArrendamentoCalcFields
-          value={calc}
-          onChange={setCalc}
-          onResult={onArrendamento}
-          areaHaFixo={areasArmazenadas ? areasArmazenadas.arrendada : areaArrendada ? areaArrendada.ha : null}
-        />
       </div>
     </div>
   );
