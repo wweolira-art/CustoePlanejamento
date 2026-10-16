@@ -37,6 +37,16 @@ const IMPORT_FIXED_COLUMNS = [
   "ANOMESFIM",
   "INDICE",
 ] as const;
+const MAINTENANCE_EQUIPMENT_EMPENHOS = [
+  { code: 26, percentage: 1.14 },
+  { code: 190, percentage: 72.88 },
+  { code: 192, percentage: 0.33 },
+  { code: 254, percentage: 15.08 },
+  { code: 332, percentage: 7.92 },
+  { code: 428, percentage: 0.09 },
+  { code: 466, percentage: 2.49 },
+  { code: 472, percentage: 0.08 },
+] as const;
 const MONTH_NAMES = [
   "Setembro",
   "Outubro",
@@ -262,6 +272,11 @@ function isFuncionarioImportCategory(name: string | null | undefined) {
   return text.includes("despesa") && text.includes("funcionario");
 }
 
+function isMaintenanceImportCategory(name: string | null | undefined) {
+  const text = foldImportText(name).replace(/[^a-z0-9]+/g, " ").trim();
+  return text === "despesa c manutencao" || text === "despesas com manutencao";
+}
+
 function activityImportCode(activities: Activity[], line: LineItem) {
   const code = activities.find((activity) => activity.id === line.activity_id)?.empenho;
   return numberOrTextCode(code);
@@ -298,8 +313,28 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
         .map((line) => line.parent_id)
         .filter((id): id is number => typeof id === "number" && id > 0),
     );
+    const maintenanceByObject = new Map<string, { source: LineItem; monthlyCents: number[] }>();
     for (const line of category.lines) {
       if (!lineCanExport(line, parentIds)) continue;
+      const isLinkedMaintenanceEquipment =
+        isMaintenanceImportCategory(category.name) &&
+        (line.item_type === "E" || line.ref_kind === "cost_object") &&
+        line.activity_id != null &&
+        activities.some((activity) => activity.id === line.activity_id);
+
+      if (isLinkedMaintenanceEquipment) {
+        const objectCode = String(line.object_code ?? data.name).trim();
+        const current = maintenanceByObject.get(objectCode) ?? {
+          source: line,
+          monthlyCents: monthKeys.map(() => 0),
+        };
+        line.months.forEach((month, index) => {
+          current.monthlyCents[index] += Math.round((Number(month.value) || 0) * 100);
+        });
+        maintenanceByObject.set(objectCode, current);
+        continue;
+      }
+
       const row: Record<string, string | number | null> = {
         COD_GRUPOEMPRESA: 1,
         COD_EMPRESA: 1,
@@ -317,6 +352,45 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
         row[String(monthKeys[index])] = Math.round((Number(month.value) || 0) * 100) / 100;
       });
       rows.push(row);
+    }
+
+    // Soma todas as atividades/equipamentos do mesmo objeto antes de aplicar
+    // os percentuais de empenho (os percentuais informados somam 100,01%).
+    const totalPercentage = MAINTENANCE_EQUIPMENT_EMPENHOS.reduce(
+      (total, item) => total + item.percentage,
+      0,
+    );
+    for (const [objectCode, group] of maintenanceByObject) {
+      const baseRow: Record<string, string | number | null> = {
+        COD_GRUPOEMPRESA: 1,
+        COD_EMPRESA: 1,
+        COD_FILIAL: 1,
+        OBJETOCUSTO: numberOrTextCode(objectCode),
+        ITEMCUSTO: "",
+        EMPENHO: 0,
+        SUBEMPENHO: "G28",
+        OBSERVACAO: group.source.description,
+        ANOMESINI: monthKeys[0],
+        ANOMESFIM: "",
+        INDICE: 1,
+      };
+      MAINTENANCE_EQUIPMENT_EMPENHOS.forEach((empenho, empenhoIndex) => {
+        const distributedRow = { ...baseRow, EMPENHO: Number(empenho.code) };
+        monthKeys.forEach((monthKey, monthIndex) => {
+          const totalCents = group.monthlyCents[monthIndex] ?? 0;
+          const roundedShare = Math.round(totalCents * (empenho.percentage / totalPercentage));
+          const isLast = empenhoIndex === MAINTENANCE_EQUIPMENT_EMPENHOS.length - 1;
+          const centsBeforeLast = isLast
+            ? MAINTENANCE_EQUIPMENT_EMPENHOS.slice(0, -1).reduce(
+                (sum, previous) => sum + Math.round(totalCents * (previous.percentage / totalPercentage)),
+                0,
+              )
+            : 0;
+          distributedRow[String(monthKey)] =
+            (isLast ? totalCents - centsBeforeLast : roundedShare) / 100;
+        });
+        rows.push(distributedRow);
+      });
     }
   }
   return rows;
