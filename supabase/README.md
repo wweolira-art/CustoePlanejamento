@@ -1,8 +1,8 @@
 # Integração de orçamento
 
 Estado: o modo `BUDGET_STORAGE=supabase` persiste o planejamento no Supabase.
-O login Oracle/ORDS continua ativo. O SQLite é mantido como base de cálculo local,
-restaurada do estado remoto, para preservar o motor de fórmulas existente.
+O login Oracle/ORDS continua ativo. O motor de fórmulas usa tabelas SQLite
+temporárias em memória, restauradas da nuvem, sem arquivos locais de orçamento.
 
 ## 1. Configuração local
 
@@ -110,10 +110,17 @@ planejamento e confere o conteúdo remoto antes de gravar `BUDGET_STORAGE=supaba
 no `.env`. Se já existe estado remoto, não o sobrescreve com a base local.
 Reiniciar a API é necessário para carregar a configuração.
 
-Na inicialização, `data/supabase-calculation-cache.db` é restaurado do Supabase.
-O arquivo `data/planejamento.db` original permanece preservado. Os módulos fora
-do orçamento e as permissões locais continuam em SQLite nesta base de execução;
-o login e cadastro de usuários continuam no Oracle/ORDS.
+Na inicialização, as 33 tabelas migradas são criadas somente em memória e
+restauradas do Supabase. O schema sem dados está em `server/budget-memory-schema.sql`.
+Os módulos fora do orçamento e as permissões locais continuam em
+`data/local-settings.db`; o login e cadastro de usuários continuam no Oracle/ORDS.
+Uma instalação nova não precisa de `planejamento.db` ou de cache de orçamento.
+
+Em instalações antigas, parar a API e executar `npm run supabase:retire-local`.
+O comando confere o estado remoto, preserva backups em `data/migrations/`, retira
+as tabelas migradas da base persistente, arquiva os arquivos antigos e os JSONs
+das planilhas já migradas. Os dados dos demais módulos são conferidos e mantidos.
+A restauração de JSON local via `/api/reset` fica desativada no modo Supabase.
 
 Cada requisição de planejamento verifica a revisão remota. Uma revisão nova
 renova a base de cálculo antes de executar a rota. Gravações são serializadas no
@@ -140,7 +147,6 @@ Não há gravação offline. O login Oracle/ORDS não foi substituído por Supab
 Auth. A sincronização de permissões e módulos fora do orçamento entre servidores
 não faz parte desta etapa.
 
-Para voltar ao modo local, parar a API, alterar `BUDGET_STORAGE=sqlite` e iniciar
-novamente. Isso abre a base original preservada, não os dados posteriores à
-ativação. Antes de um retorno definitivo, exportar o estado remoto mais recente
-para não perder as edições feitas no Supabase.
+Após a retirada dos dados locais, não basta alterar o modo para voltar ao SQLite:
+isso criaria uma base nova. Uma recuperação local exige restaurar um backup ou
+exportar o estado remoto mais recente, com a API parada.

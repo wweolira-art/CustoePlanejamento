@@ -16,6 +16,7 @@
     "supabase:prepare": "tsx scripts/supabase-prepare.ts",
     "supabase:migrate": "tsx scripts/supabase-migrate.ts",
     "supabase:activate": "tsx scripts/supabase-activate.ts",
+    "supabase:retire-local": "tsx scripts/supabase-retire-local.ts",
     "desktop:install": "powershell -ExecutionPolicy Bypass -File scripts/windows/install-servico.ps1",
     "desktop:uninstall": "powershell -ExecutionPolicy Bypass -File scripts/windows/uninstall-servico.ps1",
     "download:login-cane-stock": "node scripts/download-login-cane-stock.mjs",

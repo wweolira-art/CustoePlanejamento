@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { loadEnvFile } from "./env.js";
+import { initializeBudgetMemory } from "./budget-memory.js";
 import type { Request, Response, NextFunction } from "express";
 import { buildMigration, type MigrationPayload } from "./supabase-migration.js";
 import { supabaseRuntimeRequest, supabaseRequest, type BudgetTable } from "./supabase.js";
@@ -29,7 +29,7 @@ export function budgetCloudEnabled() {
 }
 
 export function captureBudgetState(db: Database.Database): Record<string, any[]> {
-  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name));
+  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table' UNION SELECT name FROM sqlite_temp_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name));
   return Object.fromEntries(BUDGET_LOCAL_TABLES.filter((table) => present.has(table)).map((table) => [table, db.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all()]));
 }
 
@@ -70,15 +70,13 @@ export async function prepareBudgetCache(defaultPath: string): Promise<string> {
   if (process.env.PLANEJAMENTO_DB_PATH || !budgetCloudEnabled()) return process.env.PLANEJAMENTO_DB_PATH ? resolve(process.env.PLANEJAMENTO_DB_PATH) : defaultPath;
   bootState = await readCloudBudget();
   if (!bootState) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
-  const path = resolve(dirname(defaultPath), "supabase-calculation-cache.db");
-  if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    const original = new Database(defaultPath, { readonly: true, fileMustExist: true });
-    try { await original.backup(path); } finally { original.close(); }
-  }
-  const cache = new Database(path);
-  try { restoreBudgetState(cache, bootState.estado.tables); } finally { cache.close(); }
-  return path;
+  return resolve(dirname(defaultPath), "local-settings.db");
+}
+
+export function loadBudgetMemory(db: Database.Database) {
+  if (!bootState) return;
+  initializeBudgetMemory(db);
+  restoreBudgetState(db, bootState.estado.tables);
 }
 
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;

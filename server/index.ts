@@ -3663,6 +3663,9 @@ app.put("/api/premissas/cell", (req, res) => {
 });
 
 app.post("/api/reset", (_req, res) => {
+  if (budgetCloudEnabled()) {
+    return res.status(409).json({ error: "O orçamento está no Supabase. A restauração de dados locais foi desativada." });
+  }
   const result = importFromJson(true);
   seedCatalogs();
   invalidateWorkbook();
@@ -3688,5 +3691,5 @@ app.listen(port, host, () => {
   const frontend = existsSync(join(distDir, "index.html"))
     ? ` | app em http://localhost:${port}`
     : "";
-  console.log(`API ${budgetCloudEnabled() ? "Supabase (cálculo local)" : "SQLite"} em http://localhost:${port}${frontend}`);
+  console.log(`API ${budgetCloudEnabled() ? "Supabase (cálculo em memória)" : "SQLite"} em http://localhost:${port}${frontend}`);
 });

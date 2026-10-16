@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { db } from "./db.js";
+import { budgetCloudEnabled } from "./budget-cloud.js";
 import { isCategoryLabel, isTotalLabel, sheetKind, SHEET_TITLES } from "./catalog.js";
 import type { RawCell, SheetIndexItem, SheetJson } from "../src/engine/types.ts";
 
@@ -37,6 +38,10 @@ const monthPayload = (raw: RawCell): { formula: string | null; value: string | n
 };
 
 export function importFromJson(force = false) {
+  if (budgetCloudEnabled()) {
+    if (force) throw new Error("O orçamento está no Supabase. A restauração de JSON local foi desativada.");
+    return { imported: false };
+  }
   const already = db.prepare("SELECT value FROM meta WHERE key = 'imported'").get() as { value: string } | undefined;
   if (already && !force) return { imported: false };
 

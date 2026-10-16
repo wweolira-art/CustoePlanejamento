@@ -6,7 +6,7 @@ import { OFFICIAL_ACTIVITIES } from "./activities-data.js";
 import { COST_CENTERS, SHEET_TITLES } from "./catalog.js";
 import { OFFICIAL_COST_OBJECTS } from "./cost-objects-data.js";
 import { OFFICIAL_MATERIALS } from "./materials-data.js";
-import { prepareBudgetCache } from "./budget-cloud.js";
+import { prepareBudgetCache, loadBudgetMemory } from "./budget-cloud.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = path.join(root, "data");
@@ -15,6 +15,7 @@ fs.mkdirSync(dataDir, { recursive: true });
 // Permite calcular/exportar uma cópia isolada sem abrir o banco em uso.
 export const dbPath = await prepareBudgetCache(path.join(dataDir, "planejamento.db"));
 export const db = new Database(dbPath);
+loadBudgetMemory(db);
 
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");

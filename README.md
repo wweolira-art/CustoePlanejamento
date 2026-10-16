@@ -45,7 +45,9 @@ npm test         # executa os testes em tests/
 
 ## Dados locais
 
-O SQLite local fica em `data/planejamento.db`. Arquivos de banco, logs, builds, executaveis do servico Windows, arquivos temporarios e credenciais ficam fora do Git por padrao.
+Com `BUDGET_STORAGE=supabase`, os orcamentos sao carregados da nuvem em tabelas temporarias na memoria do servidor. Nao e necessario copiar um SQLite de orcamento para outro computador. Somente os modulos ainda nao migrados e as permissoes locais ficam em `data/local-settings.db`.
+
+Para retirar bases antigas de uma instalacao existente, pare a API e execute `npm run supabase:retire-local`. O comando confere o estado remoto, preserva backups privados e arquiva os bancos e JSONs de planilhas ja migradas. Arquivos de banco, backups e credenciais ficam fora do Git.
 
 Os JSONs em `data/` e `public/data/` podem ser usados como carga/base inicial do projeto. Revise esses arquivos antes de publicar caso contenham informacoes internas da empresa.
 
