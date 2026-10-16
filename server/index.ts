@@ -84,6 +84,7 @@ import {
 } from "./auth.js";
 import { registerUsersAdminRoutes } from "./users-admin.js";
 import { registerAccessControl } from "./access-control.js";
+import { BudgetCloudController, budgetBootState, budgetCloudEnabled, captureBudgetState } from "./budget-cloud.js";
 import {
   createExternalSiteGroup,
   createExternalSiteItem,
@@ -886,6 +887,9 @@ function writeFixedActivityMonths(
 }
 
 const app = express();
+if (budgetCloudEnabled() && !budgetBootState()) {
+  throw new Error("O modo Supabase não foi inicializado. Remova o override PLANEJAMENTO_DB_PATH ao iniciar a API.");
+}
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
@@ -895,9 +899,22 @@ app.use((_req, res, next) => {
 });
 app.use(express.json({ limit: "32mb" }));
 
+if (budgetCloudEnabled() && budgetBootState()) {
+  const cloud = new BudgetCloudController(db, budgetBootState()!, () => {
+    const premises = premissasKpis();
+    const sheets = (listSheets() as { id: number; kind: string }[])
+      .filter((s) => s.kind === "cost_center").map((s) => sheetDetail(s.id));
+    const tables = captureBudgetState(db);
+    return { currentSafraId: currentSafraId(), createdAt: new Date().toISOString(),
+      tables, sheets, premises, formulaErrors: [],
+      parsedPlans: Object.fromEntries(tables.lines.map((l) => [l.id, parseCalcPlans(l.calc_plans)])) };
+  }, invalidateWorkbook, (req) => verifySessionToken(readBearerToken(req.headers.authorization)));
+  app.use(cloud.middleware);
+}
+
 registerAccessControl(app);
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, budgetStorage: budgetCloudEnabled() ? "supabase" : "sqlite" }));
 
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -3671,5 +3688,5 @@ app.listen(port, host, () => {
   const frontend = existsSync(join(distDir, "index.html"))
     ? ` | app em http://localhost:${port}`
     : "";
-  console.log(`API SQLite em http://localhost:${port}${frontend}`);
+  console.log(`API ${budgetCloudEnabled() ? "Supabase (cálculo local)" : "SQLite"} em http://localhost:${port}${frontend}`);
 });

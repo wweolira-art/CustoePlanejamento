@@ -22,6 +22,11 @@ servico/logs/
 tmp-*
 *.tmp
 *.log
+data/migrations/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/supabase-calculation-cache.db*
 
 # OS and editor metadata
 .DS_Store

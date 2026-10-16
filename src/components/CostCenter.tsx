@@ -1570,14 +1570,14 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
     void api.costObjects().then(setCostObjects);
   }, [sheetLineCount]);
 
-  if (err) return <div className="page"><p>{err}</p></div>;
-  if (!data) return <div className="page"><p>Carregando centro de custo…</p></div>;
+  if (err) return <div className="page cost-center-page"><p>{err}</p></div>;
+  if (!data) return <div className="page cost-center-page"><p>Carregando centro de custo…</p></div>;
 
   const materialActivityIds = activityIdsWithMaterials(data);
   const someMaterialsVisible = materialActivityIds.some((id) => !hiddenMaterials[id]);
 
   return (
-    <div className="page">
+    <div className="page cost-center-page">
       <ReadOnlyFieldset>
 
       <section className="panel">

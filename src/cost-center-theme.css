@@ -1,0 +1,182 @@
+/* Orçamentos: branco e azul profundo inspirado na identidade Elejota Agro. */
+.main:has(.cost-center-page),
+body:has(.cost-center-page) .modal-back,
+body:has(.cost-center-page) > .combo-list {
+  --paper: #ffffff;
+  --ink: #20294a;
+  --muted: #60708b;
+  --line: #dbe3f0;
+  --input: #ffffff;
+  --green: #315fbb;
+  --green-soft: #edf3ff;
+  --gold: #315fbb;
+  --warm: #f5f7fc;
+  --head-blue: #eef2fb;
+  --head-blue-strong: #29235b;
+  --head: var(--head-blue);
+  --accent: #315fbb;
+  --accent-soft: #edf3ff;
+  --consolidado-center-bg: #e7edfb;
+  --orcamento-fill: #ffffff;
+  --orcamento-fill-focus: #edf3ff;
+  --orcamento-border: #dbe3f0;
+  --consolidado-activity-bg: #f0f4fc;
+  --consolidado-activity-bg-focus: #e7edfb;
+  --danger: #b4233a;
+  --glass-blur: 0px;
+  --orcamento-glass-blur: 0px;
+  --shadow: 0 4px 18px rgb(41 35 91 / 6%);
+  color-scheme: light;
+  color: var(--ink);
+}
+
+.main:has(.cost-center-page) {
+  background: #141b35;
+}
+
+.cost-center-page > p,
+.cost-center-page .toolbar > p,
+.cost-center-page .toolbar > span {
+  color: #e1e8fb;
+}
+
+.main:has(.cost-center-page) .topbar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+}
+
+.cost-center-page .panel {
+  background: #ffffff;
+  border-color: var(--line);
+}
+
+.cost-center-page .panel h3 {
+  border-radius: 11px 11px 0 0;
+  background: #eef2fb;
+  color: #29235b;
+  border-bottom-color: var(--line);
+}
+
+.cost-center-page .panel h3 small {
+  color: #315fbb;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-center-page table.data.cost-center th {
+  background: #29235b;
+  color: #ffffff;
+  border-color: #494479;
+}
+
+.cost-center-page table.data.cost-center th small.month-year {
+  color: #dce5ff;
+}
+
+.cost-center-page table.data.cost-center tr.group td {
+  background: #f0f4fc;
+}
+
+.cost-center-page table.data.cost-center tr.child td {
+  background: #ffffff;
+}
+
+.cost-center-page table.data.cost-center tr.child:hover td {
+  background: #f5f8ff;
+}
+
+.cost-center-page table.data.cost-center tr.center-group td {
+  background: #e7edfb;
+  color: #29235b;
+}
+
+.cost-center-page table.data.cost-center tr.total td,
+.cost-center-page table.data.cost-center tfoot tr.data-subtotal td {
+  background: #eaf0fc;
+  color: #29235b;
+  font-weight: 800;
+  border-top-color: #c9d7f2;
+}
+
+.cost-center-page .btn.primary,
+body:has(.cost-center-page) .modal .btn.primary {
+  background: #315fbb;
+  color: #ffffff;
+  border-color: #315fbb;
+}
+
+.cost-center-page .btn.primary:hover,
+body:has(.cost-center-page) .modal .btn.primary:hover {
+  background: #29235b;
+  border-color: #29235b;
+}
+
+.cost-center-page .btn:not(.primary):not(.danger),
+body:has(.cost-center-page) .modal .btn:not(.primary):not(.danger) {
+  background: #ffffff;
+  border-color: #cad6ec;
+  color: #29235b;
+}
+
+.cost-center-page .btn:not(.primary):not(.danger):hover {
+  background: #edf3ff;
+  border-color: #315fbb;
+}
+
+.cost-center-page table.data.cost-center input.cell,
+.cost-center-page table.data.cost-center .combo-input,
+.cost-center-page table.data.cost-center select.cell-select {
+  color: #20294a;
+  caret-color: #315fbb;
+}
+
+.cost-center-page table.data.cost-center .combo-input::placeholder {
+  color: #74819a;
+}
+
+.cost-center-page :is(input, select, textarea, button):focus-visible,
+body:has(.cost-center-page) .modal :is(input, select, textarea, button):focus-visible {
+  outline: 2px solid #315fbb;
+  outline-offset: 2px;
+}
+
+.cost-center-page table.data.cost-center tr.center-group .icon-btn:hover {
+  color: #315fbb;
+}
+
+.cost-planning-hub:has(.cost-center-page) :is(.cost-planning-tabs, .cost-center-tabs) {
+  background: #ffffff;
+  border: 1px solid #dbe3f0;
+  box-shadow: 0 4px 16px rgb(41 35 91 / 5%);
+  backdrop-filter: none;
+}
+
+.cost-planning-hub:has(.cost-center-page) :is(.cost-planning-tabs, .cost-center-tabs) .btn {
+  color: #414e70;
+  background: transparent;
+}
+
+.cost-planning-hub:has(.cost-center-page) :is(.cost-planning-tabs, .cost-center-tabs) .btn:hover {
+  background: #edf3ff;
+  color: #29235b;
+}
+
+.cost-planning-hub:has(.cost-center-page) :is(.cost-planning-tabs, .cost-center-tabs) .btn.primary {
+  background: #29235b;
+  color: #ffffff;
+}
+
+.cost-planning-hub:has(.cost-center-page) .verified-mark,
+.main:has(.cost-center-page) .topbar .verified-mark {
+  color: #315fbb;
+}
+
+.cost-planning-hub:has(.cost-center-page) .btn.primary .verified-mark {
+  color: #dce5ff;
+}
+
+body:has(.cost-center-page) .modal {
+  background: #ffffff;
+  color: #20294a;
+  border-color: #dbe3f0;
+}

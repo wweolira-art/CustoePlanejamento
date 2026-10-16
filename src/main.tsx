@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { AppProvider } from "./store";
 import "./index.css";
+import "./cost-center-theme.css";
 
 const saved = localStorage.getItem("theme");
 document.documentElement.dataset.theme = saved === "dark" ? "dark" : "light";

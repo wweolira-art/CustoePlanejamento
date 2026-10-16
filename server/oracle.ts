@@ -1,5 +1,7 @@
 import "./uv-threadpool.js";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "./env.js";
+export { loadEnvFile } from "./env.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import oracledb from "oracledb";
@@ -9,34 +11,11 @@ oracledb.fetchAsString = [oracledb.CLOB];
 
 const ORACLE_NET_DIR = join(dirname(fileURLToPath(import.meta.url)), "oracle-net");
 
-let loadedEnv = false;
 let thickReady = false;
 type OracleRole = "consulta" | "gravacao";
 const pools: Partial<Record<OracleRole, oracledb.Pool>> = {};
 const poolPromises: Partial<Record<OracleRole, Promise<oracledb.Pool>>> = {};
 let resetPromise: Promise<void> | null = null;
-
-export function loadEnvFile() {
-  if (loadedEnv) return;
-  loadedEnv = true;
-  const path = join(process.cwd(), ".env");
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("--")) continue;
-    const idx = trimmed.indexOf("=");
-    if (idx < 0) continue;
-    const key = trimmed.slice(0, idx).trim();
-    let value = trimmed.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] == null) process.env[key] = value;
-  }
-}
 
 function resolveClientLibDir() {
   const configured = (process.env.ORACLE_CLIENT_LIB_DIR ?? "").trim();
