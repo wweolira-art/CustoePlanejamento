@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
-import { api, type Activity, type ApontamentoEquipmentData, type ApontamentoEquipmentItem, type ApontamentoEquipmentRate, type CalcRule, type CatalogCategory, type CostObject, type CostObjectHourCost, type CostObjectHourCostData, type DashboardData, type EquipmentCatalogItem, type EquipmentHourCost, type EquipmentHourCostData, type LineItem, type Material, type MaterialLastPrice, type SheetDetail, type SheetInfo, type ValueDistribution } from "../api";
+import { api, type Activity, type ApontamentoEquipmentData, type ApontamentoEquipmentItem, type ApontamentoEquipmentRate, type CalcRule, type CatalogCategory, type CostObject, type CostObjectHourCost, type CostObjectHourCostData, type DashboardData, type Empenho, type EquipmentCatalogItem, type EquipmentHourCost, type EquipmentHourCostData, type LineItem, type Material, type MaterialLastPrice, type SheetDetail, type SheetInfo, type ValueDistribution } from "../api";
 import { formatBRL, formatQty, parseMoneyInput } from "../lib/format";
 import { useApp } from "../store";
 import { ReadOnlyFieldset } from "../lib/editAccess";
@@ -278,7 +278,7 @@ function isMaintenanceImportCategory(name: string | null | undefined) {
 }
 
 function activityImportCode(activities: Activity[], line: LineItem) {
-  const code = activities.find((activity) => activity.id === line.activity_id)?.empenho;
+  const code = line.empenho_override ?? activities.find((activity) => activity.id === line.activity_id)?.empenho;
   return numberOrTextCode(code);
 }
 
@@ -343,7 +343,7 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
         ITEMCUSTO: "",
         EMPENHO: activityImportCode(activities, line),
         SUBEMPENHO: subempenhoImportCode(activities, line),
-        OBSERVACAO: line.description,
+        OBSERVACAO: line.observation?.trim() || line.description,
         ANOMESINI: monthKeys[0],
         ANOMESFIM: "",
         INDICE: 1,
@@ -369,7 +369,7 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
         ITEMCUSTO: "",
         EMPENHO: 0,
         SUBEMPENHO: "G28",
-        OBSERVACAO: group.source.description,
+        OBSERVACAO: group.source.observation?.trim() || group.source.description,
         ANOMESINI: monthKeys[0],
         ANOMESFIM: "",
         INDICE: 1,
@@ -534,6 +534,146 @@ function FixedMonthValueFields({
         </div>
       ) : null}
     </>
+  );
+}
+
+function VariableMonthValueFields({
+  values,
+  qty,
+  months,
+  onValues,
+  onQty,
+  onMonths,
+}: {
+  values: string[];
+  qty: string;
+  months: number[];
+  onValues: (next: string[]) => void;
+  onQty: (next: string) => void;
+  onMonths: (next: number[]) => void;
+}) {
+  const factor = quantityOrOne(qty);
+  const total = months.reduce((sum, month) => sum + fixedMonthlyAmount(values[month] ?? "", qty), 0);
+  return (
+    <>
+      <label>
+        Quantidade
+        <small>Multiplica o valor informado em cada mês.</small>
+        <input value={qty} onChange={(e) => onQty(e.target.value)} placeholder="Ex.: 1" />
+      </label>
+      <label className="span-2">
+        Meses e valores
+        <small>Selecione os meses e informe um valor para cada um.</small>
+        <div className="choice-picks">
+          <button
+            type="button"
+            className={months.length === 12 ? "on" : ""}
+            onClick={() => onMonths(months.length === 12 ? [] : ALL_MONTHS)}
+          >
+            {months.length === 12 ? "Limpar" : "Todos"}
+          </button>
+          {MONTHS.map((label, month) => (
+            <button
+              key={label}
+              type="button"
+              className={months.includes(month) ? "on" : ""}
+              onClick={() =>
+                onMonths(
+                  months.includes(month)
+                    ? months.filter((item) => item !== month)
+                    : [...months, month].sort((a, b) => a - b),
+                )
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </label>
+      {months.length ? (
+        <div className="month-values-grid span-2">
+          {months.map((month) => (
+            <label key={month}>
+              {MONTHS[month]}
+              <input
+                inputMode="decimal"
+                value={values[month] ?? ""}
+                onChange={(e) => {
+                  const next = [...values];
+                  next[month] = e.target.value;
+                  onValues(next);
+                }}
+                placeholder="0,00"
+              />
+              {factor !== 1 && parseInputNum(values[month]) > 0 ? (
+                <small>{formatBRL(fixedMonthlyAmount(values[month], qty))} no mês</small>
+              ) : null}
+            </label>
+          ))}
+        </div>
+      ) : null}
+      {total > 0 ? <div className="formula-box span-2" style={{ margin: "0 0 8px" }}>Total selecionado: {formatBRL(total)}</div> : null}
+    </>
+  );
+}
+
+function FixedActivityValueFields({
+  mode,
+  onMode,
+  fixedValue,
+  onFixedValue,
+  values,
+  qty,
+  months,
+  onValues,
+  onQty,
+  onMonths,
+}: {
+  mode: "same" | "individual";
+  onMode: (mode: "same" | "individual") => void;
+  fixedValue: string;
+  onFixedValue: (value: string) => void;
+  values: string[];
+  qty: string;
+  months: number[];
+  onValues: (next: string[]) => void;
+  onQty: (next: string) => void;
+  onMonths: (next: number[]) => void;
+}) {
+  return (
+    <div className="span-2">
+      <div className="kind-toggle" style={{ padding: "0 0 8px" }}>
+        <button type="button" className={`btn ${mode === "same" ? "primary" : ""}`} onClick={() => onMode("same")}>
+          Mesmo valor nos meses
+        </button>
+        <button
+          type="button"
+          className={`btn ${mode === "individual" ? "primary" : ""}`}
+          onClick={() => onMode("individual")}
+        >
+          Valor diferente por mês
+        </button>
+      </div>
+      {mode === "same" ? (
+        <FixedMonthValueFields
+          value={fixedValue}
+          qty={qty}
+          months={months}
+          onValue={onFixedValue}
+          onQty={onQty}
+          onMonths={onMonths}
+        />
+      ) : (
+        <VariableMonthValueFields
+          values={values}
+          qty={qty}
+          months={months}
+          onValues={onValues}
+          onQty={onQty}
+          onMonths={onMonths}
+        />
+      )}
+    </div>
   );
 }
 
@@ -1584,6 +1724,7 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
   const [data, setData] = useState<SheetDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [empenhos, setEmpenhos] = useState<Empenho[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [costObjects, setCostObjects] = useState<CostObject[]>([]);
   const [equipments, setEquipments] = useState<EquipmentCatalogItem[]>([]);
@@ -1620,6 +1761,7 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
     void Promise.all([
       api.sheet(sheetId).then(setData),
       api.activities().then(setActivities),
+      api.empenhos().then(setEmpenhos).catch(() => setEmpenhos([])),
       api.materials().then(setMaterials),
       api.costObjects().then(setCostObjects),
       api.equipments().then(setEquipments).catch(() => setEquipments([])),
@@ -1896,7 +2038,6 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
                       const equipmentHead = Boolean(block.activity && isEquipmentHead(block.activity));
                       const fixedCostHead = Boolean(block.activity && isFixedCostObjectHead(block.activity));
                       const equipmentCode = block.activity ? equipmentCodeFromLine(block.activity) : "";
-                      const costObject = block.activity ? costObjectRef(costObjects, block.activity) : null;
                       return (
                         <Fragment key={block.activity?.id ?? `loose-${sectionIdx}-${idx}`}>
                           <tr className={`group${section.center ? " nested-activity" : ""}`}>
@@ -2055,10 +2196,22 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
                                       </small>
                                     ) : null}
                                   </div>
-                                  {costObject?.description && !equipmentHead && !fixedCostHead ? (
-                                    <span className="cost-object-desc" title={costObject.description}>
-                                      {costObject.description}
-                                    </span>
+                                  {block.activity?.empenho_override ? (
+                                    <small className="activity-empenho-override">Empenho {block.activity.empenho_override}</small>
+                                  ) : null}
+                                  {block.activity && block.activity.activity_id != null ? (
+                                    <input
+                                      className="activity-observation-input"
+                                      aria-label={`Observação da atividade ${block.activity.description}`}
+                                      placeholder="Observação (opcional)"
+                                      defaultValue={block.activity.observation ?? ""}
+                                      key={`${block.activity.id}-${block.activity.observation ?? ""}`}
+                                      onBlur={async (event) => {
+                                        const observation = event.currentTarget.value.trim();
+                                        if (observation === (block.activity?.observation ?? "")) return;
+                                        setData(await api.updateLine(block.activity!.id, { observation }));
+                                      }}
+                                    />
                                   ) : null}
                                 </div>
                               </div>
@@ -2353,6 +2506,7 @@ export function CostCenter({ sheetId }: { sheetId: number }) {
           initialCenterSheetId={addActivityIn.centerSheetId ?? null}
           sheets={sheets}
           activities={activities}
+          empenhos={empenhos}
           materials={materials}
           costObjects={costObjects}
           equipments={equipments}
@@ -5515,6 +5669,7 @@ function AddActivity({
   initialCenterSheetId = null,
   sheets,
   activities,
+  empenhos,
   materials = [],
   costObjects,
   equipments,
@@ -5529,6 +5684,7 @@ function AddActivity({
   initialCenterSheetId?: number | null;
   sheets: SheetInfo[];
   activities: Activity[];
+  empenhos: Empenho[];
   materials?: Material[];
   costObjects: CostObject[];
   equipments: EquipmentCatalogItem[];
@@ -5552,6 +5708,7 @@ function AddActivity({
   const [centerSheetId, setCenterSheetId] = useState(initialCenterSheetId ?? 0);
   const [centerHeads, setCenterHeads] = useState<{ activityId: number; code: string; description: string }[]>([]);
   const [activityId, setActivityId] = useState(0);
+  const [empenhoOverride, setEmpenhoOverride] = useState("");
   const [equipmentCode, setEquipmentCode] = useState("");
   const [linkKind, setLinkKind] = useState<"none" | "activity" | "material">("none");
   const [linkLineId, setLinkLineId] = useState(0);
@@ -5560,6 +5717,8 @@ function AddActivity({
   const [calc, setCalc] = useState<ActivityCalcState>(EMPTY_CALC);
   const [monthValues, setMonthValues] = useState(emptyMonthValues);
   const [fixedValue, setFixedValue] = useState("");
+  const [fixedMonthValues, setFixedMonthValues] = useState(emptyMonthValues);
+  const [fixedEntryMode, setFixedEntryMode] = useState<"same" | "individual">("individual");
   const [fixedQty, setFixedQty] = useState("1");
   const [fixedMonths, setFixedMonths] = useState<number[]>([]);
   const [arrendamentoCalc, setArrendamentoCalc] = useState<ArrendamentoCalcValue>(() =>
@@ -6170,10 +6329,28 @@ function AddActivity({
               selectedLabel={act ? `${act.code} — ${act.description}` : ""}
               onPick={(opt) => {
                 setActivityId(opt?.id ?? 0);
+                setEmpenhoOverride("");
                 setMonthValues(emptyMonthValues());
               }}
             />
           </label>
+          {activityId ? (
+            <label>
+              Empenho desta linha
+              <small>Opcional — permite incluir a atividade novamente vinculada a outro empenho.</small>
+              <select value={empenhoOverride || act?.empenho || ""} onChange={(e) => setEmpenhoOverride(e.target.value)}>
+                {!act?.empenho ? <option value="">Selecione o empenho</option> : null}
+                {act?.empenho ? <option value={act.empenho}>{act.empenho} — padrão da atividade</option> : null}
+                {empenhos
+                  .filter((empenho) => empenho.code !== act?.empenho)
+                  .map((empenho) => (
+                    <option key={empenho.id} value={empenho.code}>
+                      {empenho.code} — {empenho.description}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : null}
           <label>
             Objeto de custo
             <CatalogSearch
@@ -6187,16 +6364,18 @@ function AddActivity({
           </>
           )}
           {mode === "fixed" && !objectMode ? (
-            <>
-              <FixedMonthValueFields
-                value={fixedValue}
+            <FixedActivityValueFields
+                mode={fixedEntryMode}
+                onMode={setFixedEntryMode}
+                fixedValue={fixedValue}
+                onFixedValue={setFixedValue}
+                values={fixedMonthValues}
                 qty={fixedQty}
                 months={fixedMonths}
-                onValue={setFixedValue}
+                onValues={setFixedMonthValues}
                 onQty={setFixedQty}
                 onMonths={setFixedMonths}
               />
-            </>
           ) : null}
         </div>
         {mode === "arrendamento" && !equipmentMode && !objectMode ? (
@@ -6497,14 +6676,8 @@ function AddActivity({
                 return;
               }
               if (mode === "fixed") {
-                const monthly = monthlyValue;
                 const months = fixedMonths;
-                const unit = parseInputNum(fixedValue);
                 const qty = quantityOrOne(fixedQty);
-                if (!(unit > 0)) {
-                  setSaveErr("Informe o valor fixo.");
-                  return;
-                }
                 if (!(qty > 0)) {
                   setSaveErr("Informe a quantidade.");
                   return;
@@ -6513,8 +6686,15 @@ function AddActivity({
                   setSaveErr("Escolha pelo menos um mês.");
                   return;
                 }
-                if (!(monthly > 0)) {
-                  setSaveErr("Informe quantidade e valor fixo.");
+                const hasValue = fixedEntryMode === "same"
+                  ? parseInputNum(fixedValue) > 0
+                  : months.some((month) => parseInputNum(fixedMonthValues[month] ?? "") > 0);
+                if (!hasValue) {
+                  setSaveErr(
+                    fixedEntryMode === "same"
+                      ? "Informe o valor fixo."
+                      : "Informe um valor para pelo menos um dos meses selecionados.",
+                  );
                   return;
                 }
               } else if (equipmentMode && !maintenance && !skipAuto) {
@@ -6545,7 +6725,15 @@ function AddActivity({
                   mode === "fixed"
                     ? {
                         useActivityAuto: false,
-                        months: fixedMonths.map((month) => ({ month, value: monthlyValue })),
+                        months: fixedMonths
+                          .map((month) => ({
+                            month,
+                            value: fixedMonthlyAmount(
+                              fixedEntryMode === "same" ? fixedValue : fixedMonthValues[month] ?? "",
+                              fixedQty,
+                            ),
+                          }))
+                          .filter((row) => row.value > 0),
                         calcReducePct: reducePct,
                       }
                     : maintenance
@@ -6582,6 +6770,7 @@ function AddActivity({
                       : {
                           categoryId,
                           activityId,
+                          empenhoOverride: empenhoOverride || null,
                           costObjectId: costObjectId || null,
                           description: act?.description ?? "Atividade",
                           ...(centerSheetId ? { centerSheetId } : {}),

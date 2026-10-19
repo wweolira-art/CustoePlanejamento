@@ -221,6 +221,8 @@ addColumn("ALTER TABLE fazendas ADD COLUMN distancia REAL");
 addColumn("ALTER TABLE categories ADD COLUMN catalog_id INTEGER REFERENCES category_catalog(id)");
 addColumn("ALTER TABLE lines ADD COLUMN center_sheet_id INTEGER REFERENCES sheets(id)");
 addColumn("ALTER TABLE lines ADD COLUMN funcionario_api_config TEXT");
+addColumn("ALTER TABLE lines ADD COLUMN observation TEXT");
+addColumn("ALTER TABLE lines ADD COLUMN empenho_override TEXT");
 
 export function linkLineCatalogs() {
   db.exec(`

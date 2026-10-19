@@ -304,7 +304,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready: Boolean(authUser) && (sheets.length > 0 || Boolean(error)),
+      // Um catálogo vazio ainda é uma resposta válida. O carregamento não pode
+      // depender da existência de planilhas, ou a tela inicial fica presa.
+      ready: Boolean(authUser) && (catalogReady || sheets.length > 0 || Boolean(error)),
       error,
       authUser,
       authLoading,
@@ -329,7 +331,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshAuthUser,
       setSheetVerified,
     }),
-    [authUser, authLoading, authOffline, sheets, siteGroups, error, safras, safraId, safra, safraSwitching, page, theme, toggleTheme, login, logout, selectSafra, addSafra, removeSafra, reload, reloadSiteGroups, refreshAuthUser, setSheetVerified, go],
+    [authUser, authLoading, authOffline, sheets, siteGroups, error, catalogReady, safras, safraId, safra, safraSwitching, page, theme, toggleTheme, login, logout, selectSafra, addSafra, removeSafra, reload, reloadSiteGroups, refreshAuthUser, setSheetVerified, go],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

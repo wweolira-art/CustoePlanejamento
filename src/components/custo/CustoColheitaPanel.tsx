@@ -78,12 +78,16 @@ export function CustoColheitaPanel({
           mecanizada: custoDaLinha(mecanizada?.linhas, "Carregamento"),
         };
         const apoio = { manual: 0, mecanizada: custoDoCodigo(mecanizada?.linhas, "85") };
-        const administrativo = { manual: 0, mecanizada: custoDoCodigo(mecanizada?.linhas, "266") };
+        const administrativo = {
+          manual: custoDaLinha(manual?.linhas, "Administrativo"),
+          mecanizada: custoDoCodigo(mecanizada?.linhas, "266"),
+        };
+        const bitucas = { manual: custoDaLinha(manual?.linhas, "Catação de bitucas"), mecanizada: 0 };
         const transporte = {
           manual: custoDaLinha(manual?.linhas, "Transporte"),
           mecanizada: custoDaLinha(mecanizada?.linhas, "Transporte"),
         };
-        const cta = soma([corte, carregamento, apoio, administrativo]);
+        const cta = soma([corte, carregamento, apoio, administrativo, bitucas]);
         const ctta = soma([cta, transporte]);
     setLinhas([
       { nome: "Corte", ...corte },
@@ -91,7 +95,7 @@ export function CustoColheitaPanel({
       { nome: "Embolação/Tombo", manual: null, mecanizada: null },
       { nome: "Operações de apoio", ...apoio },
       { nome: "Administrativo", ...administrativo },
-      { nome: "Catação de bitucas", manual: null, mecanizada: null },
+      { nome: "Catação de bitucas", ...bitucas },
       { nome: "CTA", ...cta, destaque: true },
       { nome: "Transporte de cana", ...transporte },
       { nome: "CTTA", ...ctta, destaque: true },

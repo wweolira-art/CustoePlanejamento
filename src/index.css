@@ -648,11 +648,17 @@ table.data.cost-center tr.total td {
 }
 .activity-name-row .combo { flex: 1; min-width: 0; }
 .activity-name-row .combo.compact { flex: 0 0 auto; }
-.activity-name-cell .cost-object-desc {
-  max-width: 100%;
+.activity-observation-input {
+  width: min(100%, 320px);
+  min-width: 120px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
   font-size: 11px;
-  color: var(--muted);
 }
+.activity-empenho-override { color: var(--muted); font-size: 10px; }
 .icon-btn.fold-btn {
   flex: 0 0 auto;
   width: 24px;
@@ -3403,8 +3409,172 @@ table.data.resumo th.month-group {
     grid-template-columns: 1fr;
   }
 }
+.custo-colheita-view {
+  --colheita-blue: #221b44;
+  --colheita-blue-soft: #efeaf6;
+  --colheita-line: #d8d2e6;
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .kind-toggle .btn,
+.custo-colheita-view .btn:not(.primary):not(.danger) {
+  background: #fff;
+  color: var(--colheita-blue);
+  border-color: var(--colheita-blue);
+  box-shadow: none;
+}
+.custo-colheita-view .kind-toggle .btn:hover,
+.custo-colheita-view .btn:not(.primary):not(.danger):hover {
+  background: var(--colheita-blue-soft);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .btn.primary,
+.custo-colheita-view .btn.primary:hover {
+  background: var(--colheita-blue);
+  color: #fff;
+  border-color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita {
+  background: #fff;
+  color: var(--colheita-blue);
+  border: 1px solid var(--colheita-line);
+  box-shadow: 0 8px 24px rgba(34, 27, 68, .07);
+}
+.custo-colheita-view .custo-colheita h2,
+.custo-colheita-view .custo-colheita-nota {
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-filtro label {
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-filtro input,
+.custo-colheita-view .custo-colheita-tabela input {
+  background: #fff;
+  color: var(--colheita-blue);
+  border-color: var(--colheita-line);
+}
+.custo-colheita-view .custo-colheita-tabela {
+  background: #fff;
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-tabela th,
+.custo-colheita-view .custo-colheita-tabela td {
+  border-color: var(--colheita-line);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-tabela thead th {
+  background: var(--colheita-blue);
+  color: #fff;
+}
+.custo-colheita-view .custo-colheita-destaque th,
+.custo-colheita-view .custo-colheita-destaque td {
+  background: var(--colheita-blue-soft);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-cards article {
+  background: #fff;
+  border: 1px solid var(--colheita-line);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-cards strong,
+.custo-colheita-view .custo-colheita-cards small {
+  color: var(--colheita-blue);
+}
 .estagio-producao {
   margin-top: 18px;
+}
+.estagio-producao-view {
+  --estagio-blue: #221b44;
+  --estagio-blue-soft: #efeaf6;
+  --estagio-line: #d8d2e6;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .lead,
+.estagio-producao-view h3,
+.estagio-producao-view h4,
+.estagio-producao-view .toggle-caption {
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .panel {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+  box-shadow: 0 8px 24px rgba(34, 27, 68, .07);
+}
+.estagio-producao-view .panel h3,
+.estagio-producao-view .estagio-parametros thead th {
+  background: var(--estagio-blue);
+  color: #fff;
+  border-color: var(--estagio-blue);
+}
+.estagio-producao-view .kind-toggle .btn,
+.estagio-producao-view .btn:not(.primary):not(.danger) {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-blue);
+  box-shadow: none;
+}
+.estagio-producao-view .kind-toggle .btn:hover,
+.estagio-producao-view .btn:not(.primary):not(.danger):hover {
+  background: var(--estagio-blue-soft);
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .btn.primary,
+.estagio-producao-view .btn.primary:hover {
+  background: var(--estagio-blue);
+  color: #fff;
+  border-color: var(--estagio-blue);
+}
+.estagio-producao-view input,
+.estagio-producao-view select {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+  accent-color: var(--estagio-blue);
+}
+.estagio-producao-view input:focus,
+.estagio-producao-view select:focus {
+  border-color: var(--estagio-blue);
+  box-shadow: 0 0 0 3px rgba(34, 27, 68, .12);
+}
+.estagio-producao-view .estagio-producao-table thead th {
+  background: var(--estagio-blue);
+  color: #fff;
+}
+.estagio-producao-view .estagio-producao-table td {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+}
+.estagio-producao-view .estagio-producao-table .estagio-grupo td,
+.estagio-producao-view .estagio-producao-table .estagio-total td {
+  background: var(--estagio-blue-soft);
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-producao-table .estagio-preco td,
+.estagio-producao-view .estagio-producao-table .estagio-margem td {
+  background: #f6f4fa;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-parametros table {
+  background: #fff;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-parametros th,
+.estagio-producao-view .estagio-parametros td,
+.estagio-producao-view .estagio-parametros tbody th,
+.estagio-producao-view .estagio-parametros tbody td {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+}
+.estagio-producao-view .estagio-parametros tbody th small,
+.estagio-producao-view .estagio-parametros-nota {
+  color: #625b7a;
+}
+.estagio-producao-view .estagio-parametros input.estagio-parametro-input {
+  color: var(--estagio-blue);
+  -webkit-text-fill-color: var(--estagio-blue);
+  border-color: var(--estagio-line);
 }
 .estagio-arrendamento {
   margin-top: 16px;

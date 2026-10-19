@@ -297,6 +297,7 @@ function createActivityLine(
   costObjectId?: number | null,
   fill?: Parameters<typeof resolveLineCalc>[0] & { calcReducePct?: number | null },
   parentId: number | null = null,
+  empenhoOverride?: string | null,
 ) {
   const act = db.prepare("SELECT description FROM activities WHERE id = ?").get(activityId) as { description: string } | undefined;
   if (!act) return null;
@@ -312,8 +313,8 @@ function createActivityLine(
       `INSERT INTO lines (
          sheet_id, category_id, object_code, product_code, item_type, description, is_group, sort_order,
          activity_id, material_id, cost_object_id, ref_kind, parent_id,
-         use_activity_auto, start_month, end_month, calc_months, calc_premise, calc_dose, calc_price, calc_exclude_weekdays, calc_area_premise, calc_area_pct, calc_plans, calc_reduce_pct
-       ) VALUES (?, ?, ?, NULL, NULL, ?, 1, ?, ?, NULL, ?, 'activity', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         use_activity_auto, start_month, end_month, calc_months, calc_premise, calc_dose, calc_price, calc_exclude_weekdays, calc_area_premise, calc_area_pct, calc_plans, calc_reduce_pct, empenho_override
+       ) VALUES (?, ?, ?, NULL, NULL, ?, 1, ?, ?, NULL, ?, 'activity', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       sheetId,
       categoryId,
@@ -335,6 +336,7 @@ function createActivityLine(
       calc.calcAreaPct,
       calc.calcPlans,
       calcReducePct,
+      empenhoOverride?.trim() || null,
     ).lastInsertRowid,
   );
 }
@@ -424,18 +426,23 @@ function findActivityLine(
   activityId: number,
   costObjectId?: number | null,
   parentId: number | null = null,
+  empenhoOverride?: string | null,
 ) {
+  const defaultEmpenho = (db.prepare("SELECT empenho FROM activities WHERE id = ?").get(activityId) as { empenho: string | null } | undefined)?.empenho ?? null;
+  const effectiveEmpenho = empenhoOverride?.trim() || defaultEmpenho;
   return db
     .prepare(
-      `SELECT id FROM lines
-       WHERE category_id = ? AND activity_id = ? AND ref_kind = 'activity'
+      `SELECT l.id FROM lines l
+       LEFT JOIN activities a ON a.id = l.activity_id
+       WHERE l.category_id = ? AND l.activity_id = ? AND l.ref_kind = 'activity'
          AND (
-           (? IS NULL AND parent_id IS NULL) OR parent_id = ?
+           (? IS NULL AND l.parent_id IS NULL) OR l.parent_id = ?
          )
          AND (
-           (? IS NULL AND cost_object_id IS NULL)
-           OR cost_object_id = ?
-         )`,
+           (? IS NULL AND l.cost_object_id IS NULL)
+           OR l.cost_object_id = ?
+         )
+         AND COALESCE(l.empenho_override, a.empenho) IS ?`,
     )
     .get(
       categoryId,
@@ -444,6 +451,7 @@ function findActivityLine(
       parentId,
       costObjectId ?? null,
       costObjectId ?? null,
+      effectiveEmpenho,
     ) as { id: number } | undefined;
 }
 
@@ -2458,6 +2466,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
     productCode?: string;
     itemType?: string;
     activityId?: number | null;
+    empenhoOverride?: string | null;
     materialId?: number | null;
     costObjectId?: number | null;
     parentLineId?: number | null;
@@ -2524,6 +2533,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
 
   let parentId = body.parentLineId ? Number(body.parentLineId) : null;
   let activityId = body.activityId ? Number(body.activityId) : null;
+  const empenhoOverride = String(body.empenhoOverride ?? "").trim() || null;
   const requestedCostObject = body.costObjectId ? Number(body.costObjectId) : null;
   if (centerSheetId && !parentId) {
     parentId = ensureCostCenterGroup(sheetId, categoryId, centerSheetId);
@@ -2678,7 +2688,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
   } else if (!body.materialId && activityId && body.refKind !== "cost_object" && (!parent || parentIsCenter)) {
     const groupId = parentIsCenter ? parentId : null;
     const source = groupId && parent?.center_sheet_id ? sourceActivityOnSheet(parent.center_sheet_id, activityId) : undefined;
-    const existing = findActivityLine(categoryId, activityId, requestedCostObject, groupId);
+    const existing = findActivityLine(categoryId, activityId, requestedCostObject, groupId, empenhoOverride);
     let created: number | null = existing?.id ?? null;
     if (!created) {
       try {
@@ -2705,6 +2715,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
                 calcReducePct: body.calcReducePct,
               },
           groupId,
+          empenhoOverride,
         );
       } catch (e) {
         return res.status(400).json({ error: e instanceof Error ? e.message : "Não foi possível incluir a atividade." });
@@ -3197,6 +3208,7 @@ app.patch("/api/lines/:id", async (req, res) => {
   if (!line) return res.status(404).json({ error: "Linha não encontrada" });
   const body = req.body as {
     description?: string;
+    observation?: string | null;
     objectCode?: string;
     productCode?: string;
     itemType?: string;
@@ -3263,6 +3275,7 @@ app.patch("/api/lines/:id", async (req, res) => {
   db.prepare(
     `UPDATE lines SET
        description = COALESCE(?, description),
+       observation = CASE WHEN ? THEN ? ELSE observation END,
        object_code = ?,
        product_code = ?,
        item_type = ?,
@@ -3273,6 +3286,8 @@ app.patch("/api/lines/:id", async (req, res) => {
      WHERE id = ?`,
   ).run(
     isEquipmentHead && body.productCode === undefined ? null : body.description ?? null,
+    body.observation !== undefined ? 1 : 0,
+    body.observation?.trim() || null,
     catalog.object_code,
     catalog.product_code,
     catalog.item_type,

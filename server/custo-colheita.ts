@@ -16,6 +16,8 @@ const GRUPOS: { titulo: string; linhas: { objeto: string; codigos: string[] }[] 
   {
     titulo: "Colheita manual",
     linhas: [
+      { objeto: "Catação de bitucas", codigos: ["74"] },
+      { objeto: "Administrativo", codigos: ["72"] },
       { objeto: "Transporte", codigos: ["70", "71"] },
       { objeto: "Carregamento", codigos: ["69"] },
       { objeto: "Corte", codigos: ["68", "63"] },

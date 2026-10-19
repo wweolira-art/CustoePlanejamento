@@ -153,6 +153,8 @@ export class BudgetCloudController {
   private revision: number;
   private state: CloudState;
   private queue: Promise<void> = Promise.resolve();
+  private refreshQueue: Promise<void> = Promise.resolve();
+  private activeMutation = false;
   constructor(private db: Database.Database, initial: RemoteState, private snapshot: () => any, private invalidate: () => void, private authenticate: (req: Request) => { id: number } | null, private transport = {
     revision: async () => {
       const rows = await supabaseRuntimeRequest<{ revisao: number }[]>("orcamento_aplicativo_estado", undefined, new URLSearchParams({ id: "eq.principal", select: "revisao" }));
@@ -166,43 +168,73 @@ export class BudgetCloudController {
     this.state = initial.estado;
   }
   private async refresh() {
-    const revision = await this.transport.revision();
-    if (revision !== this.revision) {
-      const latest = await this.transport.load();
-      if (!latest) throw new Error("Estado remoto do orçamento não encontrado.");
-      restoreBudgetState(this.db, latest.estado.tables);
-      this.state = latest.estado;
-      this.revision = Number(latest.revisao);
-      this.invalidate();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const previous = this.refreshQueue;
+    this.refreshQueue = previous.then(() => gate);
+    await previous;
+    try {
+      // The local SQLite snapshot is shared by request handlers. Do not restore a
+      // remote snapshot while a write route is mutating it inside its transaction.
+      while (this.activeMutation) await new Promise((resolve) => setTimeout(resolve, 10));
+      const revision = await this.transport.revision();
+      if (revision !== this.revision) {
+        const latest = await this.transport.load();
+        if (!latest) throw new Error("Estado remoto do orçamento não encontrado.");
+        restoreBudgetState(this.db, latest.estado.tables);
+        this.state = latest.estado;
+        this.revision = Number(latest.revisao);
+        this.invalidate();
+      }
+    } finally {
+      release();
     }
   }
   middleware = (req: Request, res: Response, next: NextFunction) => {
     if (!budgetPath(req.path)) return next();
+    const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
     let release!: () => void;
-    const gate = new Promise<void>((done) => { release = done; });
     const previous = this.queue;
-    this.queue = previous.then(() => gate);
-    void previous.then(async () => {
+    if (mutation) {
+      const gate = new Promise<void>((done) => { release = done; });
+      this.queue = previous.then(() => gate);
+      void previous.then(() => { this.activeMutation = true; });
+    }
+    void (async () => {
+      if (mutation) await previous;
       const originalJson = res.json.bind(res);
       const user = this.authenticate(req);
-      if (!user) { release(); originalJson.call(res.status(401), { error: "Sessão expirada ou inválida." }); return; }
-      const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+      if (!user) {
+        if (mutation) release();
+        originalJson.call(res.status(401), { error: "Sessão expirada ou inválida." });
+        return;
+      }
+      let routeStarted = false;
+      res.once("close", () => {
+        // Leituras não alteram o estado local. Se o cliente cancelar uma leitura
+        // longa, libere a fila para os próximos pedidos do orçamento.
+        if (!mutation && routeStarted && !res.writableFinished) this.invalidate();
+      });
       let baseline: Record<string, any[]>;
       try {
         await this.refresh();
-        baseline = captureBudgetState(this.db);
+        if (mutation) baseline = captureBudgetState(this.db);
       } catch {
-        release();
+        if (mutation) release();
         originalJson.call(res.status(503), { error: "Não foi possível carregar o orçamento no Supabase. Tente novamente." });
         return;
       }
+      routeStarted = true;
+      if (res.destroyed) { if (mutation) release(); return; }
       let responded = false;
       res.json = ((body: any) => {
         if (responded) return res;
         responded = true;
         void (async () => {
           try {
-            if (res.statusCode >= 400) {
+            if (!mutation) {
+              originalJson(body);
+            } else if (res.statusCode >= 400) {
               restoreBudgetState(this.db, baseline);
               this.invalidate();
             } else if (mutation) {
@@ -220,17 +252,32 @@ export class BudgetCloudController {
             this.invalidate();
             res.removeHeader("Content-Length");
             originalJson.call(res.status(503), { error: error instanceof Error ? error.message : "Não foi possível confirmar a gravação no Supabase." });
-          } finally { release(); }
+          } finally {
+            if (mutation) {
+              this.activeMutation = false;
+              release();
+            }
+          }
         })();
         return res;
       }) as Response["json"];
-      res.once("finish", () => {
-        if (!responded) { restoreBudgetState(this.db, baseline); this.invalidate(); release(); }
+      if (mutation) res.once("finish", () => {
+        if (!responded) {
+          restoreBudgetState(this.db, baseline);
+          this.invalidate();
+          this.activeMutation = false;
+          release();
+        }
       });
-      // Não liberar ao desconectar: uma rota assíncrona pode continuar alterando
-      // a base de cálculo. A fila só avança após o término da resposta/commit.
+      // Escritas mantêm a fila até o commit, mesmo se o cliente desconectar.
       next();
-    }).catch(() => { release(); if (!res.headersSent) res.status(503).json({ error: "Persistência do orçamento indisponível." }); });
+    })().catch(() => {
+      if (mutation) {
+        this.activeMutation = false;
+        release();
+      }
+      if (!res.headersSent) res.status(503).json({ error: "Persistência do orçamento indisponível." });
+    });
   };
 }
 

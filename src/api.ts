@@ -4,6 +4,25 @@ import type { ConsumoOleoHidraulicoData } from "./lib/consumo-oleo-hidraulico";
 
 export type { LubrificacaoDashboardData, ConsumoOleoHidraulicoData };
 const AUTH_STORAGE_KEY = "pa_auth_token";
+const API_TIMEOUT_MS = 30_000;
+
+async function request(url: string, init: RequestInit = {}, signal?: AbortSignal) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = window.setTimeout(() => controller.abort(new Error("Tempo limite ao conectar com a API.")), API_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted) {
+      throw new Error("A API demorou mais de 30 segundos para responder. Verifique se o servidor está ativo e tente novamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
 
 function authHeaders(extra?: Record<string, string>) {
   const token = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -38,13 +57,13 @@ const fail = async (res: Response): Promise<never> => {
 };
 
 const get = async <T>(url: string, signal?: AbortSignal): Promise<T> => {
-  const res = await fetch(url, { headers: authHeaders(), signal });
+  const res = await request(url, { headers: authHeaders() }, signal);
   if (!res.ok) await fail(res);
   return res.json() as Promise<T>;
 };
 
 const send = async <T>(url: string, method: string, body?: unknown): Promise<T> => {
-  const res = await fetch(url, {
+  const res = await request(url, {
     method,
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: body == null ? undefined : JSON.stringify(body),
@@ -166,6 +185,8 @@ export interface LineItem {
   product_code: string | null;
   item_type: string | null;
   description: string;
+  observation?: string | null;
+  empenho_override?: string | null;
   is_group: number;
   activity_id: number | null;
   material_id: number | null;
