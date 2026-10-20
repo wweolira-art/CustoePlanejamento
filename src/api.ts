@@ -5,17 +5,23 @@ import type { ConsumoOleoHidraulicoData } from "./lib/consumo-oleo-hidraulico";
 export type { LubrificacaoDashboardData, ConsumoOleoHidraulicoData };
 const AUTH_STORAGE_KEY = "pa_auth_token";
 const API_TIMEOUT_MS = 30_000;
+// Consultas do relatório de custos podem levar vários minutos em períodos longos.
+// O Oracle permite até 5 minutos por consulta; damos margem para execução e retorno HTTP.
+const COST_REPORT_TIMEOUT_MS = 10 * 60_000;
 
 async function request(url: string, init: RequestInit = {}, signal?: AbortSignal) {
+  const timeoutMs = url.startsWith("/api/custo/") ? COST_REPORT_TIMEOUT_MS : API_TIMEOUT_MS;
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abortFromCaller, { once: true });
-  const timer = window.setTimeout(() => controller.abort(new Error("Tempo limite ao conectar com a API.")), API_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort(new Error("Tempo limite ao conectar com a API.")), timeoutMs);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted && !signal?.aborted) {
-      throw new Error("A API demorou mais de 30 segundos para responder. Verifique se o servidor está ativo e tente novamente.");
+      const seconds = Math.round(timeoutMs / 1000);
+      const route = url.split("?", 1)[0];
+      throw new Error(`A API demorou mais de ${seconds} segundos para responder${url.startsWith("/api/custo/") ? ` no relatório de custos (${route})` : ""}. Verifique se o servidor está ativo e tente novamente.`);
     }
     throw error;
   } finally {
@@ -2467,6 +2473,7 @@ export interface SeedTransportSaveBody {
 }
 
 export const api = {
+  health: () => get<{ ok: boolean; budgetStorage: "supabase" | "sqlite" }>("/api/health"),
   login: (email: string, password: string) => send<AuthSession>("/api/auth/login", "POST", { email, password }),
   me: () => get<{ user: AuthUser }>("/api/auth/me"),
   logout: () => send<{ ok: boolean }>("/api/auth/logout", "POST"),

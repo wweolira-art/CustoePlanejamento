@@ -68,8 +68,23 @@ export async function readCloudBudget(): Promise<RemoteState | undefined> {
 export async function prepareBudgetCache(defaultPath: string): Promise<string> {
   loadEnvFile();
   if (process.env.PLANEJAMENTO_DB_PATH || !budgetCloudEnabled()) return process.env.PLANEJAMENTO_DB_PATH ? resolve(process.env.PLANEJAMENTO_DB_PATH) : defaultPath;
-  bootState = await readCloudBudget();
-  if (!bootState) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
+  let retry = 0;
+  while (!bootState) {
+    try {
+      bootState = await readCloudBudget();
+      if (!bootState) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Falha de rede ao conectar ao Supabase.";
+      // A network outage must not kill the API process permanently under `tsx
+      // watch`. Keep retrying so the server comes up as soon as Supabase returns.
+      // Configuration, authentication, and schema errors remain fatal and visible.
+      if (!/conectar ao Supabase|20 segundos|fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(message)) throw error;
+      retry += 1;
+      const delayMs = Math.min(30_000, 2_000 * 2 ** Math.min(retry - 1, 4));
+      console.error(`[api] Supabase indisponível durante a inicialização; nova tentativa em ${Math.round(delayMs / 1000)}s. ${message}`);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
+    }
+  }
   return resolve(dirname(defaultPath), "local-settings.db");
 }
 
@@ -174,11 +189,14 @@ export class BudgetCloudController {
     this.refreshQueue = previous.then(() => gate);
     await previous;
     try {
-      // The local SQLite snapshot is shared by request handlers. Do not restore a
-      // remote snapshot while a write route is mutating it inside its transaction.
-      while (this.activeMutation) await new Promise((resolve) => setTimeout(resolve, 10));
-      const revision = await this.transport.revision();
+      let revision = await this.transport.revision();
       if (revision !== this.revision) {
+        // Reads can proceed during an in-flight save while the remote revision is
+        // unchanged. Wait only before restoring a genuinely newer remote snapshot,
+        // which would otherwise overwrite a write route's in-memory SQLite changes.
+        while (this.activeMutation) await new Promise((resolve) => setTimeout(resolve, 10));
+        revision = await this.transport.revision();
+        if (revision === this.revision) return;
         const latest = await this.transport.load();
         if (!latest) throw new Error("Estado remoto do orçamento não encontrado.");
         restoreBudgetState(this.db, latest.estado.tables);
@@ -234,10 +252,12 @@ export class BudgetCloudController {
           try {
             if (!mutation) {
               originalJson(body);
-            } else if (res.statusCode >= 400) {
+              return;
+            }
+            if (res.statusCode >= 400) {
               restoreBudgetState(this.db, baseline);
               this.invalidate();
-            } else if (mutation) {
+            } else {
               const snapshot = this.snapshot();
               const current = captureBudgetState(this.db);
               if (stateHash(current) !== stateHash(baseline)) {
