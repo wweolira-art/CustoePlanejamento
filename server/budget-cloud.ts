@@ -23,6 +23,7 @@ export const BUDGET_LOCAL_TABLES = [
 export type CloudState = { format: 1; namespace: string; initialSafra: number; activeBudgetId?: string; tables: Record<string, any[]> };
 type RemoteState = { revisao: number; estado: CloudState };
 let bootState: RemoteState | undefined;
+let budgetBootstrapStarted = false;
 
 export function budgetCloudEnabled() {
   return process.env.BUDGET_STORAGE === "supabase";
@@ -64,34 +65,42 @@ export async function readCloudBudget(): Promise<RemoteState | undefined> {
   return row;
 }
 
-/** Chamado antes de abrir o banco usado pelos módulos de cálculo. */
+/** Resolve o caminho do banco sem deixar o início da API dependente da rede. */
 export async function prepareBudgetCache(defaultPath: string): Promise<string> {
   loadEnvFile();
-  if (process.env.PLANEJAMENTO_DB_PATH || !budgetCloudEnabled()) return process.env.PLANEJAMENTO_DB_PATH ? resolve(process.env.PLANEJAMENTO_DB_PATH) : defaultPath;
-  let retry = 0;
-  while (!bootState) {
-    try {
-      bootState = await readCloudBudget();
-      if (!bootState) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha de rede ao conectar ao Supabase.";
-      // A network outage must not kill the API process permanently under `tsx
-      // watch`. Keep retrying so the server comes up as soon as Supabase returns.
-      // Configuration, authentication, and schema errors remain fatal and visible.
-      if (!/conectar ao Supabase|20 segundos|fetch failed|network|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(message)) throw error;
-      retry += 1;
-      const delayMs = Math.min(30_000, 2_000 * 2 ** Math.min(retry - 1, 4));
-      console.error(`[api] Supabase indisponível durante a inicialização; nova tentativa em ${Math.round(delayMs / 1000)}s. ${message}`);
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
-    }
-  }
+  if (process.env.PLANEJAMENTO_DB_PATH) return resolve(process.env.PLANEJAMENTO_DB_PATH);
+  if (!budgetCloudEnabled()) return defaultPath;
   return resolve(dirname(defaultPath), "local-settings.db");
 }
 
 export function loadBudgetMemory(db: Database.Database) {
-  if (!bootState) return;
+  if (!budgetCloudEnabled()) return;
   initializeBudgetMemory(db);
-  restoreBudgetState(db, bootState.estado.tables);
+  if (bootState) restoreBudgetState(db, bootState.estado.tables);
+}
+
+/** Carrega o estado remoto em segundo plano, mantendo a API viva durante falhas de rede. */
+export function startBudgetBootstrap(db: Database.Database) {
+  if (!budgetCloudEnabled() || budgetBootstrapStarted) return;
+  budgetBootstrapStarted = true;
+  let retry = 0;
+  void (async () => {
+    while (!bootState) {
+      try {
+        const remote = await readCloudBudget();
+        if (!remote) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
+        restoreBudgetState(db, remote.estado.tables);
+        bootState = remote;
+        console.info(`[api] Orçamento carregado do Supabase (revisão ${remote.revisao}).`);
+      } catch (error) {
+        retry += 1;
+        const delayMs = Math.min(30_000, 2_000 * 2 ** Math.min(retry - 1, 4));
+        const message = error instanceof Error ? error.message : "Falha ao carregar o orçamento remoto.";
+        console.error(`[api] Supabase indisponível; nova tentativa em ${Math.round(delayMs / 1000)}s. ${message}`);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
+      }
+    }
+  })();
 }
 
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;

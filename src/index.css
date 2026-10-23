@@ -3352,7 +3352,7 @@ table.data.resumo th.month-group {
 }
 .custo-colheita-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.6fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(420px, 0.6fr);
   gap: 16px;
   align-items: start;
 }
@@ -3385,28 +3385,82 @@ table.data.resumo th.month-group {
   background: #eef6e6;
 }
 .custo-colheita-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.custo-colheita-cards article.custo-colheita-card {
+  min-height: 104px;
+  box-sizing: border-box;
+  padding: 8px 10px 6px;
+  border: 1px solid rgba(72, 69, 43, .08);
+  border-radius: 20px;
+  background: #f0efdf;
+  box-shadow: 0 3px 4px rgba(25, 25, 20, .28);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
 }
-.custo-colheita-cards article {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
+.custo-colheita-card-main {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+.custo-colheita-card-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e8e9e2;
+}
+.custo-colheita-card-icon-svg {
+  display: block;
+  width: 56px;
+  height: 56px;
+}
+.custo-colheita-card-metric {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.12;
 }
-.custo-colheita-cards strong {
-  font-size: 28px;
-  color: #1f9d45;
+.custo-colheita-cards .custo-colheita-card-metric strong {
+  color: #101010;
+  font-size: 23px;
+  font-weight: 800;
+  white-space: nowrap;
 }
-.custo-colheita-cards small {
-  color: #3d4a40;
+.custo-colheita-cards .custo-colheita-card-metric span {
+  color: #101010;
+  font-size: 21px;
+  font-weight: 800;
+}
+.custo-colheita-cards .custo-colheita-card small {
+  color: #101010;
+  font-size: 14px;
+  line-height: 1.15;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
 }
 @media (max-width: 900px) {
   .custo-colheita-layout {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 520px) {
+  .custo-colheita-cards {
+    grid-template-columns: 1fr;
+  }
+  .custo-colheita-cards article.custo-colheita-card {
+    min-height: 104px;
   }
 }
 .custo-colheita-view {
@@ -3470,17 +3524,87 @@ table.data.resumo th.month-group {
   background: var(--colheita-blue-soft);
   color: var(--colheita-blue);
 }
-.custo-colheita-view .custo-colheita-cards article {
-  background: #fff;
+.custo-colheita-view .custo-colheita-cards article.custo-colheita-card {
+  background: #f0efdf;
   border: 1px solid var(--colheita-line);
-  color: var(--colheita-blue);
+  color: #101010;
 }
-.custo-colheita-view .custo-colheita-cards strong,
-.custo-colheita-view .custo-colheita-cards small {
-  color: var(--colheita-blue);
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card-metric strong,
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card-metric span,
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card small {
+  color: #101010;
 }
 .estagio-producao {
   margin-top: 18px;
+}
+.estagio-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+  max-width: 1040px;
+}
+.estagio-kpi {
+  min-height: 86px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 7px 12px 6px;
+  border: 1px solid rgba(72, 69, 43, .1);
+  border-radius: 20px;
+  background: #f0efdf;
+  box-shadow: 0 3px 4px rgba(25, 25, 20, .24);
+  color: #101010;
+}
+.estagio-kpi-icone {
+  grid-row: 1 / 3;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8e9e2;
+}
+.estagio-kpi-icone svg {
+  width: 48px;
+  height: 48px;
+}
+.estagio-kpi-medida {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+  color: #101010;
+}
+.estagio-kpi-medida strong {
+  font-size: 22px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.estagio-kpi-medida b {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 800;
+}
+.estagio-kpi-medida--inline {
+  flex-direction: row;
+  gap: 4px;
+}
+.estagio-kpi-medida--inline b {
+  margin-top: 0;
+}
+.estagio-kpi small {
+  grid-column: 2;
+  color: #101010;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
 }
 .estagio-producao-view {
   --estagio-blue: #221b44;
@@ -3587,6 +3711,17 @@ table.data.resumo th.month-group {
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
   gap: 16px;
   align-items: start;
+}
+@media (max-width: 720px) {
+  .estagio-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+@media (max-width: 460px) {
+  .estagio-kpis {
+    grid-template-columns: 1fr;
+  }
 }
 .estagio-producao-table thead th {
   background: #1f9d45;

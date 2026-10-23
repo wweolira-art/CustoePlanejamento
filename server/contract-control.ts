@@ -405,9 +405,9 @@ export async function loadContractOccurrences(input: {
             AND o.datacriacao >= TO_DATE(:ini, 'YYYY-MM-DD')
             AND o.datacriacao < TO_DATE(:fim, 'YYYY-MM-DD') + 1
             ${fornecedorSql}
-          ORDER BY p.cod_fornecedor, data_ocorrencia, p.documento, p.parcela, ocorrencia`,
+          `,
         binds,
-        { maxRows: 20000, fetchArraySize: 2000 },
+        { maxRows: 20000, fetchArraySize: 2000, callTimeout: 300_000 },
       );
       return (result.rows ?? []).map((row) => occurrenceOf(row as Record<string, unknown>));
     }, input.signal),

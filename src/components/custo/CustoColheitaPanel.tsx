@@ -2,12 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { ReadOnlyFieldset, useCanEditItems } from "../../lib/editAccess";
 
-type Lado = { manual: number; mecanizada: number };
+type Lado = {
+  manual: number;
+  mecanizada: number;
+  adicionalManual?: number;
+  adicionalMecanizada?: number;
+  adicionalGeral?: number;
+};
 
 type LinhaCusto = {
   nome: string;
   manual: number | null;
   mecanizada: number | null;
+  adicionalManual?: number;
+  adicionalMecanizada?: number;
+  adicionalGeral?: number;
   destaque?: boolean;
 };
 
@@ -26,8 +35,14 @@ function porTonelada(valor: number | null, moagem: number) {
 
 function soma(lados: Lado[]): Lado {
   return lados.reduce(
-    (acc, lado) => ({ manual: acc.manual + lado.manual, mecanizada: acc.mecanizada + lado.mecanizada }),
-    { manual: 0, mecanizada: 0 },
+    (acc, lado) => ({
+      manual: acc.manual + lado.manual,
+      mecanizada: acc.mecanizada + lado.mecanizada,
+      adicionalManual: (acc.adicionalManual ?? 0) + (lado.adicionalManual ?? 0),
+      adicionalMecanizada: (acc.adicionalMecanizada ?? 0) + (lado.adicionalMecanizada ?? 0),
+      adicionalGeral: (acc.adicionalGeral ?? 0) + (lado.adicionalGeral ?? 0),
+    }),
+    { manual: 0, mecanizada: 0, adicionalManual: 0, adicionalMecanizada: 0, adicionalGeral: 0 },
   );
 }
 
@@ -37,6 +52,19 @@ function custoDaLinha(linhas: { objeto: string; custo: number }[] | undefined, n
 
 function custoDoCodigo(linhas: { objeto: string; custo: number }[] | undefined, codigo: string) {
   return linhas?.find((linha) => linha.objeto.startsWith(`${codigo} `) || linha.objeto.startsWith(`${codigo}—`))?.custo ?? 0;
+}
+
+function ManualMecanizadoIcon() {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className="custo-colheita-card-icon-svg">
+      <path d="M33 9V2m0 0-5 5m5-5 5 5" fill="none" stroke="#df675e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18 23c0-4 6-7 14-7s14 3 14 7v25c0 5-6 9-14 9s-14-4-14-9V23Z" fill="#e5e8f0" stroke="#283b66" strokeWidth="2" />
+      <ellipse cx="32" cy="23" rx="14" ry="7" fill="#f8f8f3" stroke="#283b66" strokeWidth="2" />
+      <path d="M20 31c0 4 5 7 12 7s12-3 12-7M20 38c0 4 5 7 12 7s12-3 12-7M20 45c0 4 5 7 12 7s12-3 12-7" fill="none" stroke="#283b66" strokeWidth="2" />
+      <circle cx="32" cy="23" r="8" fill="#fff" stroke="#283b66" strokeWidth="1.7" />
+      <text x="32" y="26" textAnchor="middle" fontSize="8" fontWeight="700" fill="#283b66">R$</text>
+    </svg>
+  );
 }
 
 export function CustoColheitaPanel({
@@ -59,16 +87,27 @@ export function CustoColheitaPanel({
   const [oracleConsultado, setOracleConsultado] = useState(false);
   const [linhas, setLinhas] = useState<LinhaCusto[]>([]);
   const [moagemLj, setMoagemLj] = useState(0);
+  const [custoAdministracaoAgricolaManualPorTonelada, setCustoAdministracaoAgricolaManualPorTonelada] = useState(0);
+  const [custoAdministracaoAgricolaMecanizadaPorTonelada, setCustoAdministracaoAgricolaMecanizadaPorTonelada] = useState(0);
+  const [custoAdministracaoAgricolaTotal, setCustoAdministracaoAgricolaTotal] = useState(0);
+  const [moagemOracle, setMoagemOracle] = useState(0);
   const [tonelagemManual, setTonelagemManual] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState<string | null>(null);
+  const [cacheInfo, setCacheInfo] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [consultado, setConsultado] = useState(false);
   const canEdit = useCanEditItems();
   const buscaSeq = useRef(0);
 
-  function aplicarSecoes(nextSecoes: SecaoLocal[]) {
+  function aplicarSecoes(
+    nextSecoes: SecaoLocal[],
+    administrativoAgricola = {
+      manual: custoAdministracaoAgricolaManualPorTonelada,
+      mecanizada: custoAdministracaoAgricolaMecanizadaPorTonelada,
+    },
+  ) {
         setSecoes(nextSecoes);
         const mecanizada = nextSecoes.find((secao) => secao.titulo === "Colheita mecanizada");
         const manual = nextSecoes.find((secao) => secao.titulo === "Colheita manual");
@@ -81,6 +120,9 @@ export function CustoColheitaPanel({
         const administrativo = {
           manual: custoDaLinha(manual?.linhas, "Administrativo"),
           mecanizada: custoDoCodigo(mecanizada?.linhas, "266"),
+          adicionalManual: administrativoAgricola.manual,
+          adicionalMecanizada: administrativoAgricola.mecanizada,
+          adicionalGeral: administrativoAgricola.manual + administrativoAgricola.mecanizada,
         };
         const bitucas = { manual: custoDaLinha(manual?.linhas, "Catação de bitucas"), mecanizada: 0 };
         const transporte = {
@@ -104,17 +146,39 @@ export function CustoColheitaPanel({
   }
 
   function aplicarFicha(ficha: Awaited<ReturnType<typeof api.custoColheita>>) {
+    const custoAdmAgricolaTotal = ficha.custoAdministracaoAgricola ?? 0;
+    const custoAdmAgricolaManual = ficha.custoAdministracaoAgricolaManual ?? 0;
+    const custoAdmAgricolaMecanizada = ficha.custoAdministracaoAgricolaMecanizada ?? 0;
+    const toneladasMoagemOracle = ficha.moagemOracle ?? 0;
+    const custoAdmAgricolaManualPorTonelada = toneladasMoagemOracle > 0 ? custoAdmAgricolaManual / toneladasMoagemOracle : 0;
+    const custoAdmAgricolaMecanizadaPorTonelada = toneladasMoagemOracle > 0 ? custoAdmAgricolaMecanizada / toneladasMoagemOracle : 0;
+    setCustoAdministracaoAgricolaManualPorTonelada(custoAdmAgricolaManualPorTonelada);
+    setCustoAdministracaoAgricolaMecanizadaPorTonelada(custoAdmAgricolaMecanizadaPorTonelada);
+    setCustoAdministracaoAgricolaTotal(custoAdmAgricolaTotal);
+    setMoagemOracle(toneladasMoagemOracle);
     setOracleConsultado(ficha.oracleConsultado);
-    aplicarSecoes(ficha.secoes);
+    if (ficha.cacheDesatualizado) {
+      setCacheInfo("Oracle indisponível; exibindo o último resultado em cache, que pode estar desatualizado.");
+    } else if (ficha.cacheOracle && ficha.oracleAtualizadoEm) {
+      setCacheInfo(`Resultado Oracle em cache desde ${new Date(ficha.oracleAtualizadoEm).toLocaleString("pt-BR")}.`);
+    } else if (ficha.oracleConsultado && ficha.oracleAtualizadoEm) {
+      setCacheInfo(`Consulta Oracle atualizada em ${new Date(ficha.oracleAtualizadoEm).toLocaleString("pt-BR")}.`);
+    } else {
+      setCacheInfo(null);
+    }
+    aplicarSecoes(ficha.secoes, {
+      manual: custoAdmAgricolaManualPorTonelada,
+      mecanizada: custoAdmAgricolaMecanizadaPorTonelada,
+    });
   }
 
-  function buscar(anomesDe: string, anomesAte: string) {
+  function buscar(anomesDe: string, anomesAte: string, atualizarOracle = false) {
     const seq = ++buscaSeq.current;
     setCarregando(true);
     setErro(null);
     setPeriodo({ inicio: anomesDe, fim: anomesAte });
     Promise.all([
-      api.custoColheita({ safraId, anomesInicio: anomesDe, anomesFim: anomesAte, preferirLocal: true }),
+      api.custoColheita({ safraId, anomesInicio: anomesDe, anomesFim: anomesAte, preferirLocal: true, atualizarOracle }),
       api.parametrosTecnicos(safraId, anomesDe, anomesAte).catch(() => null),
     ])
       .then(([ficha, parametros]) => {
@@ -141,9 +205,14 @@ export function CustoColheitaPanel({
     setOracleConsultado(false);
     setLinhas([]);
     setMoagemLj(0);
+    setCustoAdministracaoAgricolaManualPorTonelada(0);
+    setCustoAdministracaoAgricolaMecanizadaPorTonelada(0);
+    setCustoAdministracaoAgricolaTotal(0);
+    setMoagemOracle(0);
     setTonelagemManual(0);
     setErro(null);
     setMensagem(null);
+    setCacheInfo(null);
     setCarregando(false);
     setSalvando(false);
     buscaSeq.current += 1;
@@ -164,6 +233,14 @@ export function CustoColheitaPanel({
             },
       );
     aplicarSecoes(next);
+  }
+
+  function atualizarOracleAgora() {
+    if (!/^\d{6}$/.test(inicio.trim()) || !/^\d{6}$/.test(fim.trim())) {
+      setErro("Informe o anomes inicial e final no formato YYYYMM.");
+      return;
+    }
+    buscar(inicio.trim(), fim.trim(), true);
   }
 
   async function salvarLocal() {
@@ -210,23 +287,21 @@ export function CustoColheitaPanel({
         Anomes final
         <input value={fim} onChange={(event) => setFim(event.target.value)} inputMode="numeric" placeholder="Ex.: 202608" />
       </label>
-      <button type="submit" className="btn primary">
+      <button type="submit" className="btn primary" disabled={carregando}>
         {carregando ? "Consultando…" : "Consultar"}
+      </button>
+      <button type="button" className="btn" onClick={atualizarOracleAgora} disabled={carregando}>
+        Atualizar do Oracle
       </button>
     </form>
   );
 
   const cta = linhas.find((linha) => linha.nome === "CTA");
-  const ctta = linhas.find((linha) => linha.nome === "CTTA");
   const toneladasManual = tonelagemManual;
   const diferenca =
     cta && toneladasManual > 0 && moagemLj > 0
       ? (porTonelada(cta.manual, toneladasManual) ?? 0) - (porTonelada(cta.mecanizada, moagemLj) ?? 0)
       : null;
-  const custoManual = ctta?.manual ?? 0;
-  const custoMec = ctta?.mecanizada ?? 0;
-  const participacaoManual = custoManual + custoMec > 0 ? (custoManual / (custoManual + custoMec)) * 100 : null;
-
   return (
     <section className="custo-colheita">
       <h2>Custo para colher 1 t de cana</h2>
@@ -242,8 +317,16 @@ export function CustoColheitaPanel({
       <p className="custo-colheita-nota">
         {safraLabel}, {periodo.inicio} a {periodo.fim}. Custo lançado dividido pela moagem LJ
         {moagemLj > 0 ? ` (${num(moagemLj)} t)` : ""}
-        {tonelagemManual > 0 ? ` e pela tonelagem manual do Estágio de produção (${num(tonelagemManual)} t)` : ""}. O geral divide o custo das duas colunas pela moagem LJ.
+        {tonelagemManual > 0 ? ` e pela tonelagem manual do Estágio de produção (${num(tonelagemManual)} t)` : ""}. Administração agrícola usa o rateio para os objetos 72 (Manual) e 266 (Mecanizada), dividido pela Moagem Oracle.
       </p>
+      {custoAdministracaoAgricolaTotal > 0 ? (
+        <p className="custo-colheita-nota">
+          {moagemOracle > 0
+            ? `Administração agrícola rateada: R$ ${num(custoAdministracaoAgricolaTotal)} (obj. 72 Manual: R$ ${num(custoAdministracaoAgricolaManual)}; obj. 266 Mecanizada: R$ ${num(custoAdministracaoAgricolaMecanizada)}) ÷ Moagem Oracle ${num(moagemOracle)} t = R$ ${num(custoAdministracaoAgricolaManualPorTonelada + custoAdministracaoAgricolaMecanizadaPorTonelada)}/t no Geral.`
+            : `Custo de Administração agrícola: R$ ${num(custoAdministracaoAgricolaTotal)}. A Moagem Oracle não foi retornada para calcular o R$/t.`}
+        </p>
+      ) : null}
+      {cacheInfo ? <p className="custo-colheita-nota">{cacheInfo}</p> : null}
       {!moagemLj ? (
         <p className="custo-colheita-nota">Armazene a moagem LJ nos parâmetros técnicos para calcular o R$/t.</p>
       ) : null}
@@ -305,12 +388,18 @@ export function CustoColheitaPanel({
           </thead>
           <tbody>
             {linhas.map((linha) => {
-              const manual = porTonelada(linha.manual, toneladasManual);
-              const mecanizada = porTonelada(linha.mecanizada, moagemLj);
+              const manualBase = porTonelada(linha.manual, toneladasManual);
+              const mecanizadaBase = porTonelada(linha.mecanizada, moagemLj);
+              const manual = manualBase == null && !linha.adicionalManual ? null : (manualBase ?? 0) + (linha.adicionalManual ?? 0);
+              const mecanizada = mecanizadaBase == null && !linha.adicionalMecanizada ? null : (mecanizadaBase ?? 0) + (linha.adicionalMecanizada ?? 0);
+              const geralBase = porTonelada((linha.manual ?? 0) + (linha.mecanizada ?? 0), moagemLj);
+              const adicionalGeral = linha.adicionalGeral ?? 0;
               const geral =
                 linha.manual == null && linha.mecanizada == null
                   ? null
-                  : porTonelada((linha.manual ?? 0) + (linha.mecanizada ?? 0), moagemLj);
+                  : geralBase == null && adicionalGeral === 0
+                    ? null
+                    : (geralBase ?? 0) + adicionalGeral;
               return (
                 <tr key={linha.nome} className={linha.destaque ? "custo-colheita-destaque" : undefined}>
                   <th>{linha.nome}</th>
@@ -323,14 +412,15 @@ export function CustoColheitaPanel({
           </tbody>
         </table>
         <div className="custo-colheita-cards">
-          <article>
-            <strong>{diferenca == null ? "—" : `${diferenca > 0 ? "+" : ""}${num(diferenca)}`}</strong>
-            <span>R$/t</span>
-            <small>CTA manual − mecanizado</small>
-          </article>
-          <article>
-            <strong>{participacaoManual == null ? "—" : `${num(participacaoManual)} %`}</strong>
-            <small>Participação do custo manual no CTTA</small>
+          <article className="custo-colheita-card">
+            <div className="custo-colheita-card-main">
+              <span className="custo-colheita-card-icon"><ManualMecanizadoIcon /></span>
+              <div className="custo-colheita-card-metric">
+                <strong>{diferenca == null ? "—" : `${diferenca > 0 ? "+" : ""}${num(diferenca)}`}</strong>
+                <span>R$/t</span>
+              </div>
+            </div>
+            <small>Manual vs. Mecanizado</small>
           </article>
         </div>
       </div>

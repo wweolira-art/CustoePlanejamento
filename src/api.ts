@@ -8,9 +8,16 @@ const API_TIMEOUT_MS = 30_000;
 // Consultas do relatório de custos podem levar vários minutos em períodos longos.
 // O Oracle permite até 5 minutos por consulta; damos margem para execução e retorno HTTP.
 const COST_REPORT_TIMEOUT_MS = 10 * 60_000;
+const CONTRACT_OCCURRENCES_TIMEOUT_MS = 10 * 60_000;
 
 async function request(url: string, init: RequestInit = {}, signal?: AbortSignal) {
-  const timeoutMs = url.startsWith("/api/custo/") ? COST_REPORT_TIMEOUT_MS : API_TIMEOUT_MS;
+  const isCostReport = url.startsWith("/api/custo/") || url.startsWith("/api/custo-colheita?");
+  const isContractOccurrences = url.startsWith("/api/contract-control/ocorrencias?");
+  const timeoutMs = isCostReport
+    ? COST_REPORT_TIMEOUT_MS
+    : isContractOccurrences
+      ? CONTRACT_OCCURRENCES_TIMEOUT_MS
+      : API_TIMEOUT_MS;
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -21,7 +28,8 @@ async function request(url: string, init: RequestInit = {}, signal?: AbortSignal
     if (controller.signal.aborted && !signal?.aborted) {
       const seconds = Math.round(timeoutMs / 1000);
       const route = url.split("?", 1)[0];
-      throw new Error(`A API demorou mais de ${seconds} segundos para responder${url.startsWith("/api/custo/") ? ` no relatório de custos (${route})` : ""}. Verifique se o servidor está ativo e tente novamente.`);
+      const reportName = isCostReport || isContractOccurrences ? ` no relatório (${route})` : "";
+      throw new Error(`A API demorou mais de ${seconds} segundos para responder${reportName}. Verifique se o servidor está ativo e tente novamente.`);
     }
     throw error;
   } finally {
@@ -2727,18 +2735,26 @@ export const api = {
     return get<{ dados: Record<string, unknown>[] }>(`/api/custo/funcionarios?${q}`);
   },
   premissas: () => get<DashboardData["kpis"]>("/api/premissas"),
-  custoColheita: (filtro: { anomesInicio: string; anomesFim: string; safraId?: number; preferirLocal?: boolean }) => {
+  custoColheita: (filtro: { anomesInicio: string; anomesFim: string; safraId?: number; preferirLocal?: boolean; atualizarOracle?: boolean }) => {
     const q = new URLSearchParams({
       anomesInicio: filtro.anomesInicio,
       anomesFim: filtro.anomesFim,
     });
     if (filtro.safraId != null) q.set("safraId", String(filtro.safraId));
     if (filtro.preferirLocal) q.set("preferirLocal", "1");
+    if (filtro.atualizarOracle) q.set("atualizarOracle", "1");
     return get<{
       safraId: number;
       anomesInicio: string;
       anomesFim: string;
       oracleConsultado: boolean;
+      cacheOracle?: boolean;
+      cacheDesatualizado?: boolean;
+      oracleAtualizadoEm?: string;
+      custoAdministracaoAgricola?: number;
+      custoAdministracaoAgricolaManual?: number;
+      custoAdministracaoAgricolaMecanizada?: number;
+      moagemOracle?: number;
       secoes: { titulo: string; linhas: { objeto: string; custo: number; custoOracle: number; armazenado: boolean }[] }[];
     }>(`/api/custo-colheita?${q}`);
   },

@@ -84,7 +84,7 @@ import {
 } from "./auth.js";
 import { registerUsersAdminRoutes } from "./users-admin.js";
 import { registerAccessControl } from "./access-control.js";
-import { BudgetCloudController, budgetBootState, budgetCloudEnabled, captureBudgetState } from "./budget-cloud.js";
+import { BudgetCloudController, budgetBootState, budgetCloudEnabled, budgetPath, captureBudgetState, startBudgetBootstrap } from "./budget-cloud.js";
 import {
   createExternalSiteGroup,
   createExternalSiteItem,
@@ -895,9 +895,6 @@ function writeFixedActivityMonths(
 }
 
 const app = express();
-if (budgetCloudEnabled() && !budgetBootState()) {
-  throw new Error("O modo Supabase não foi inicializado. Remova o override PLANEJAMENTO_DB_PATH ao iniciar a API.");
-}
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
@@ -907,8 +904,18 @@ app.use((_req, res, next) => {
 });
 app.use(express.json({ limit: "32mb" }));
 
-if (budgetCloudEnabled() && budgetBootState()) {
-  const cloud = new BudgetCloudController(db, budgetBootState()!, () => {
+if (budgetCloudEnabled()) {
+  let cloud: BudgetCloudController | null = null;
+  app.use((req, res, next) => {
+    const state = budgetBootState();
+    if (!state) {
+      if (budgetPath(req.path)) {
+        res.setHeader("Retry-After", "10");
+        return res.status(503).json({ error: "Aguardando conexão com o Supabase para carregar o orçamento. Tente novamente em instantes." });
+      }
+      return next();
+    }
+    if (!cloud) cloud = new BudgetCloudController(db, state, () => {
     const premises = premissasKpis();
     const sheets = (listSheets() as { id: number; kind: string }[])
       .filter((s) => s.kind === "cost_center").map((s) => sheetDetail(s.id));
@@ -917,7 +924,8 @@ if (budgetCloudEnabled() && budgetBootState()) {
       tables, sheets, premises, formulaErrors: [],
       parsedPlans: Object.fromEntries(tables.lines.map((l) => [l.id, parseCalcPlans(l.calc_plans)])) };
   }, invalidateWorkbook, (req) => verifySessionToken(readBearerToken(req.headers.authorization)));
-  app.use(cloud.middleware);
+    return cloud.middleware(req, res, next);
+  });
 }
 
 registerAccessControl(app);
@@ -1668,7 +1676,8 @@ app.get("/api/custo-colheita", async (req, res) => {
       return;
     }
     const preferirLocal = String(req.query.preferirLocal ?? "") === "1";
-    res.json(await lerCustoColheita(Number(anomesInicio), Number(anomesFim), safraId, { preferirLocal }));
+    const atualizarOracle = String(req.query.atualizarOracle ?? "") === "1";
+    res.json(await lerCustoColheita(Number(anomesInicio), Number(anomesFim), safraId, { preferirLocal, atualizarOracle }));
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Não foi possível ler o custo de colheita." });
   }
@@ -3702,6 +3711,7 @@ if (existsSync(join(distDir, "index.html"))) {
 // 8789 evita conflito com OpenIP (server.mjs em 127.0.0.1:8787) e com o Controle Agricola.
 const port = Number(process.env.PLANEJAMENTO_API_PORT ?? process.env.PORT ?? 8789);
 const host = process.env.HOST ?? "0.0.0.0";
+startBudgetBootstrap(db);
 app.listen(port, host, () => {
   const frontend = existsSync(join(distDir, "index.html"))
     ? ` | app em http://localhost:${port}`

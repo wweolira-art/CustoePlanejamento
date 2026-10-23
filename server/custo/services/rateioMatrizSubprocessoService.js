@@ -18,7 +18,33 @@ const MATRIZ_LINHAS_SQL = readFileSync(
   'utf8'
 )
   .replace(/^--.*$/gm, '')
+  .replace(/\r\n/g, '\n')
   .trim();
+
+const RATEIO_ADMIN_AGRICOLA_DESTINOS_SQL = (() => {
+  const marcador = '\nSELECT\n    dest.processo AS dest_processo,';
+  const fimCtes = MATRIZ_LINHAS_SQL.lastIndexOf(marcador);
+  if (fimCtes < 0) throw new Error('Não foi possível localizar o CTE de rateio da matriz.');
+  return `${MATRIZ_LINHAS_SQL.slice(0, fimCtes)}
+SELECT r.dest_obj AS dest_obj, SUM(r.valor_rateado) AS valor
+FROM rateio r
+WHERE r.neg_origem = 5
+  AND r.orig_processo = 1
+GROUP BY r.dest_obj`;
+})();
+
+/** Retorna o custo 5/1 efetivamente rateado para cada objeto de destino. */
+export async function consultarRateioAdminAgricolaPorDestino(anomesInicio, anomesFim) {
+  const filtros = { negocios: [5], processo: 1, anomesInicio, anomesFim };
+  const result = await executeQuery(
+    RATEIO_ADMIN_AGRICOLA_DESTINOS_SQL,
+    bindsConsulta(filtros),
+  );
+  return (result.rows || []).map((row) => ({
+    codObjetoDestino: toNumber(row.DEST_OBJ ?? row.dest_obj),
+    valor: toNumber(row.VALOR ?? row.valor),
+  }));
+}
 
 /** Centros de custo cujas unidades do Un realizado alimentam R$/ha da coluna. */
 export const COLUNAS_SHEET = {
