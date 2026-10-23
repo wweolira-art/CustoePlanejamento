@@ -1747,6 +1747,20 @@ table.data td.col-cost-object .combo-input {
 }
 table.data tr.group .cost-object-desc { font-weight: 400; }
 .table-wrap { overflow-x: auto; }
+.colheita-horas-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.colheita-horas-table {
+  min-width: 860px;
+  table-layout: auto;
+}
+.colheita-horas-table th,
+.colheita-horas-table td {
+  white-space: nowrap;
+}
 .combo.compact { min-width: 48px; }
 .combo.compact .combo-input { min-width: 48px; width: 56px; padding: 2px 4px; font-size: 11px; }
 /* Lista suspensa de atividades/materiais (CatalogSearch) — texto preto */
