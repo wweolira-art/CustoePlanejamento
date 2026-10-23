@@ -1,0 +1,23 @@
+{
+  "source": "Supabase",
+  "exportedAt": "2026-10-23",
+  "records": [
+    {
+      "safraId": 2,
+      "periodo": {
+        "inicio": "202509",
+        "fim": "202608"
+      },
+      "areaPlantioHa": 1099,
+      "areaSocaHa": 4418,
+      "areaIrrigacaoHa": 3500,
+      "areaArrendadaHa": 2318.4,
+      "moagemLjT": 216785,
+      "tonelagemManualT": 2504.64,
+      "atr": 131,
+      "produtividadeTPorHa": 65,
+      "precoAtrConsecana": 1.181,
+      "atualizadoEm": "2026-10-19T20:20:43.917Z"
+    }
+  ]
+}
