@@ -49,16 +49,29 @@ export function ColheitaHorasMaquina() {
       ) : null}
       {rows.length ? (
         <section className="panel">
-          <div className="table-wrap">
-            <table className="data">
+          <div className="table-wrap colheita-horas-table-wrap">
+            <table className="data colheita-horas-table">
               <thead>
-                <tr><th>ID</th><th>Data</th><th>Cód. equipamento</th><th>Turno</th><th>Hora motor</th><th>Horas elevador</th></tr>
+                <tr>
+                  <th>ID COA</th>
+                  <th>Data</th>
+                  <th>Turno</th>
+                  <th>Cód. equipamento</th>
+                  <th>Tipo</th>
+                  <th>Hora motor</th>
+                  <th>Horas elevador</th>
+                </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    <td>{cell(r.id)}</td><td>{formatOrdsDate(r.data)}</td><td>{cell(r.codEquipamento)}</td>
-                    <td>{cell(r.turno)}</td><td>{cell(r.horaMotor)}</td><td>{cell(r.horasElevador)}</td>
+                    <td>{cell(r.id)}</td>
+                    <td>{formatOrdsDate(r.data)}</td>
+                    <td>{cell(r.turno)}</td>
+                    <td>{cell(r.codEquipamento)}</td>
+                    <td>{cell(r.tipoDescricao || r.codTipoEquipamento)}</td>
+                    <td>{cell(r.horaMotor)}</td>
+                    <td>{cell(r.horasElevador)}</td>
                   </tr>
                 ))}
               </tbody>

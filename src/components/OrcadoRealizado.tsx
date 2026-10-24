@@ -995,13 +995,15 @@ export function OrcadoRealizado({ embedded = false }: { embedded?: boolean } = {
   if (mainTab === "estagio") {
     return (
       <PageShell embedded={embedded}>
-        {tabBar}
-        <EstagioProducaoPanel
-          anomesFrom={custoPeriod.from}
-          anomesTo={custoPeriod.to}
-          safraLabel={custoPeriod.label}
-          safraId={reportSafraId || safraId}
-        />
+        <div className="estagio-producao-view">
+          {tabBar}
+          <EstagioProducaoPanel
+            anomesFrom={custoPeriod.from}
+            anomesTo={custoPeriod.to}
+            safraLabel={custoPeriod.label}
+            safraId={reportSafraId || safraId}
+          />
+        </div>
       </PageShell>
     );
   }
@@ -1009,14 +1011,16 @@ export function OrcadoRealizado({ embedded = false }: { embedded?: boolean } = {
   if (mainTab === "colheita") {
     return (
       <PageShell embedded={embedded}>
-        {tabBar}
-        <CustoColheitaPanel
-          safraId={reportSafraId || safraId}
-          safraLabel={custoPeriod.label}
-          anoSafra={Math.floor(custoPeriod.from / 100)}
-          anomesInicio={custoPeriod.from}
-          anomesFim={custoPeriod.to}
-        />
+        <div className="custo-colheita-view">
+          {tabBar}
+          <CustoColheitaPanel
+            safraId={reportSafraId || safraId}
+            safraLabel={custoPeriod.label}
+            anoSafra={Math.floor(custoPeriod.from / 100)}
+            anomesInicio={custoPeriod.from}
+            anomesFim={custoPeriod.to}
+          />
+        </div>
       </PageShell>
     );
   }

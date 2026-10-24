@@ -81,6 +81,11 @@ function formatArea(n: number) {
   return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
 }
 
+function formatIndicador(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
 function parseArea(raw: string) {
   const s = raw.trim().replace(/\s/g, "");
   if (!s) return 0;
@@ -201,6 +206,55 @@ function ParametrosTecnicosCard({
       </div>
       <ConsultaProgressBar active={extraindo} label="Extraindo áreas do banco…" className="consulta-progress--compact" />
     </aside>
+  );
+}
+
+function IndicadorIcone({ tipo }: { tipo: "produtividade" | "idade" | "qualidade" }) {
+  if (tipo === "produtividade") {
+    return (
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M31 51V12m0 18c-9-8-14-12-21-12 2 8 8 14 21 17m0-10c7-9 14-12 22-11-3 8-9 13-22 16" fill="none" stroke="#4a8b62" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M11 54c10-5 32-5 43 0M17 59c8-3 23-3 31 0M24 51l-4 7m14-8 1 8m9-8 5 7" fill="none" stroke="#283b66" strokeWidth="2" strokeLinecap="round" />
+        <path d="M31 10c0-3 2-5 4-5" fill="none" stroke="#df675e" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (tipo === "idade") {
+    return (
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M18 53V16m0 18c-6-6-9-8-14-8 1 6 5 10 14 12m0-9c5-7 10-9 15-8-2 6-6 10-15 12" fill="none" stroke="#4a8b62" strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="42" cy="38" r="15" fill="#fff" stroke="#283b66" strokeWidth="2.5" />
+        <path d="M42 29v10l7 4M37 5h10m-5 0v5" fill="none" stroke="#283b66" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M18 18c3-5 7-8 12-9" fill="none" stroke="#df675e" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M22 53V13m0 18c-7-7-11-10-17-10 2 7 6 12 17 15m0-10c6-8 11-11 18-10-2 7-7 12-18 15" fill="none" stroke="#4a8b62" strokeWidth="2.3" strokeLinecap="round" />
+      <path d="M37 22 44 15l7 7-7 7-7-7Zm7-7V8m7 14h6m-20 0h-5m12 7v6" fill="none" stroke="#283b66" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx="44" cy="22" r="2" fill="#df675e" />
+      <path d="M14 57h39M18 53l-4 4m16-4v4m14-4 4 4" fill="none" stroke="#283b66" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IndicadoresEstagio({ produtividade, atr }: { produtividade: number | null; atr: number | null }) {
+  const cards: { tipo: "produtividade" | "idade" | "qualidade"; valor: string; unidade: string; titulo: string; descricao: string; inline?: boolean }[] = [
+    { tipo: "produtividade" as const, valor: formatIndicador(produtividade), unidade: "t/ha", titulo: "Produtividade", descricao: "Moagem dividida pela área total do período." },
+    { tipo: "idade" as const, valor: "—", unidade: "anos", inline: true, titulo: "Idade média", descricao: "Fonte de idade média ainda não configurada." },
+    { tipo: "qualidade" as const, valor: formatIndicador(atr), unidade: "kg/t", titulo: "Quali. Cana própria", descricao: "ATR informado nos parâmetros técnicos do período." },
+  ];
+  return (
+    <div className="estagio-kpis" aria-label="Indicadores do estágio de produção">
+      {cards.map((card) => (
+        <article className="estagio-kpi" key={card.tipo} title={card.descricao}>
+          <span className="estagio-kpi-icone"><IndicadorIcone tipo={card.tipo} /></span>
+          <span className={`estagio-kpi-medida${card.inline ? " estagio-kpi-medida--inline" : ""}`}><strong>{card.valor}</strong><b>{card.unidade}</b></span>
+          <small>{card.titulo}</small>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -379,6 +433,9 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
   }, [origem, campos]);
 
   const moagem = matriz?.estagios?.parametros?.toneladas ?? matriz?.estagios?.toneladas ?? null;
+  const produtividadeIndicador = matriz?.estagios?.parametros?.produtividade
+    ?? (origem !== "vazio" ? parseArea(campos.produtividade) : null);
+  const atrIndicador = origem !== "vazio" ? parseArea(campos.atr) : null;
 
   const card = (
     <ParametrosTecnicosCard
@@ -477,6 +534,10 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
           {paramErr}
         </p>
       ) : null}
+      <IndicadoresEstagio
+        produtividade={produtividadeIndicador != null && Number.isFinite(produtividadeIndicador) ? produtividadeIndicador : null}
+        atr={atrIndicador != null && Number.isFinite(atrIndicador) ? atrIndicador : null}
+      />
       {matriz?.estagios?.linhas?.length ? (
         <EstagiosProducao data={matriz} modo={modo} areasArmazenadas={areasArmazenadas} painel={card} />
       ) : (

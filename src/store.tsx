@@ -133,12 +133,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
       applySafras(harvest);
       setSiteGroups(groups);
       setError(null);
+      setAuthOffline(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao carregar o banco");
+      const recoverable = !(e instanceof ApiError) || [502, 503, 504].includes(e.status);
+      setAuthOffline(recoverable);
     } finally {
       setCatalogReady(true);
     }
   }, []);
+
+  // Keep an authenticated session recoverable when the API restarts while the
+  // app is open. A successful health check revalidates the token and reloads the
+  // catalogs so the user's current route can render again.
+  useEffect(() => {
+    if (!authUser || !authOffline) return;
+    let cancelled = false;
+    let checking = false;
+    const recover = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        await api.health();
+        const session = await api.me();
+        if (cancelled) return;
+        setAuthUser(session.user);
+        await reload();
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 401) {
+          authStorage.clear();
+          setAuthUser(null);
+          setAuthOffline(false);
+        } else {
+          setAuthOffline(true);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+    const timer = window.setInterval(() => void recover(), 5000);
+    const onOnline = () => void recover();
+    window.addEventListener("online", onOnline);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [authUser, authOffline, reload]);
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -304,7 +346,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppState>(
     () => ({
-      ready: Boolean(authUser) && (sheets.length > 0 || Boolean(error)),
+      // Um catálogo vazio ainda é uma resposta válida. O carregamento não pode
+      // depender da existência de planilhas, ou a tela inicial fica presa.
+      ready: Boolean(authUser) && (catalogReady || sheets.length > 0 || Boolean(error)),
       error,
       authUser,
       authLoading,
@@ -329,7 +373,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshAuthUser,
       setSheetVerified,
     }),
-    [authUser, authLoading, authOffline, sheets, siteGroups, error, safras, safraId, safra, safraSwitching, page, theme, toggleTheme, login, logout, selectSafra, addSafra, removeSafra, reload, reloadSiteGroups, refreshAuthUser, setSheetVerified, go],
+    [authUser, authLoading, authOffline, sheets, siteGroups, error, catalogReady, safras, safraId, safra, safraSwitching, page, theme, toggleTheme, login, logout, selectSafra, addSafra, removeSafra, reload, reloadSiteGroups, refreshAuthUser, setSheetVerified, go],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

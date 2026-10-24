@@ -23,6 +23,7 @@ export const BUDGET_LOCAL_TABLES = [
 export type CloudState = { format: 1; namespace: string; initialSafra: number; activeBudgetId?: string; tables: Record<string, any[]> };
 type RemoteState = { revisao: number; estado: CloudState };
 let bootState: RemoteState | undefined;
+let budgetBootstrapStarted = false;
 
 export function budgetCloudEnabled() {
   return process.env.BUDGET_STORAGE === "supabase";
@@ -65,19 +66,42 @@ export async function readCloudBudget(): Promise<RemoteState | undefined> {
   return row;
 }
 
-/** Chamado antes de abrir o banco usado pelos módulos de cálculo. */
+/** Resolve o caminho do banco sem deixar o início da API dependente da rede. */
 export async function prepareBudgetCache(defaultPath: string): Promise<string> {
   loadEnvFile();
-  if (process.env.PLANEJAMENTO_DB_PATH || !budgetCloudEnabled()) return process.env.PLANEJAMENTO_DB_PATH ? resolve(process.env.PLANEJAMENTO_DB_PATH) : defaultPath;
-  bootState = await readCloudBudget();
-  if (!bootState) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
+  if (process.env.PLANEJAMENTO_DB_PATH) return resolve(process.env.PLANEJAMENTO_DB_PATH);
+  if (!budgetCloudEnabled()) return defaultPath;
   return resolve(dirname(defaultPath), "local-settings.db");
 }
 
 export function loadBudgetMemory(db: Database.Database) {
-  if (!bootState) return;
+  if (!budgetCloudEnabled()) return;
   initializeBudgetMemory(db);
-  restoreBudgetState(db, bootState.estado.tables);
+  if (bootState) restoreBudgetState(db, bootState.estado.tables);
+}
+
+/** Carrega o estado remoto em segundo plano, mantendo a API viva durante falhas de rede. */
+export function startBudgetBootstrap(db: Database.Database) {
+  if (!budgetCloudEnabled() || budgetBootstrapStarted) return;
+  budgetBootstrapStarted = true;
+  let retry = 0;
+  void (async () => {
+    while (!bootState) {
+      try {
+        const remote = await readCloudBudget();
+        if (!remote) throw new Error("Execute a ativação do Supabase antes de iniciar neste modo.");
+        restoreBudgetState(db, remote.estado.tables);
+        bootState = remote;
+        console.info(`[api] Orçamento carregado do Supabase (revisão ${remote.revisao}).`);
+      } catch (error) {
+        retry += 1;
+        const delayMs = Math.min(30_000, 2_000 * 2 ** Math.min(retry - 1, 4));
+        const message = error instanceof Error ? error.message : "Falha ao carregar o orçamento remoto.";
+        console.error(`[api] Supabase indisponível; nova tentativa em ${Math.round(delayMs / 1000)}s. ${message}`);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
+      }
+    }
+  })();
 }
 
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;
@@ -154,6 +178,8 @@ export class BudgetCloudController {
   private revision: number;
   private state: CloudState;
   private queue: Promise<void> = Promise.resolve();
+  private refreshQueue: Promise<void> = Promise.resolve();
+  private activeMutation = false;
   constructor(private db: Database.Database, initial: RemoteState, private snapshot: () => any, private invalidate: () => void, private authenticate: (req: Request) => { id: number } | null, private transport = {
     revision: async () => {
       const rows = await supabaseRuntimeRequest<{ revisao: number }[]>("orcamento_aplicativo_estado", undefined, new URLSearchParams({ id: "eq.principal", select: "revisao" }));
@@ -166,47 +192,79 @@ export class BudgetCloudController {
     this.revision = initial.revisao;
     this.state = initial.estado;
   }
-  private async refresh() {
-    const revision = await this.transport.revision();
-    if (revision !== this.revision) {
-      const latest = await this.transport.load();
-      if (!latest) throw new Error("Estado remoto do orçamento não encontrado.");
-      restoreBudgetState(this.db, latest.estado.tables);
-      this.state = latest.estado;
-      this.revision = Number(latest.revisao);
-      this.invalidate();
+  private async refresh(mutation = false) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const previous = this.refreshQueue;
+    this.refreshQueue = previous.then(() => gate);
+    await previous;
+    try {
+      // Uma leitura não restaura a base durante uma gravação. A próxima
+      // atualização buscará a revisão remota depois do commit ou rollback.
+      if (this.activeMutation && !mutation) return;
+      const revision = await this.transport.revision();
+      if (revision !== this.revision) {
+        const latest = await this.transport.load();
+        if (!latest) throw new Error("Estado remoto do orçamento não encontrado.");
+        restoreBudgetState(this.db, latest.estado.tables);
+        this.state = latest.estado;
+        this.revision = Number(latest.revisao);
+        this.invalidate();
+      }
+      if (mutation) this.activeMutation = true;
+    } finally {
+      release();
     }
   }
   middleware = (req: Request, res: Response, next: NextFunction) => {
     if (!budgetPath(req.path)) return next();
+    const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
     let release!: () => void;
-    const gate = new Promise<void>((done) => { release = done; });
     const previous = this.queue;
-    this.queue = previous.then(() => gate);
-    void previous.then(async () => {
+    if (mutation) {
+      const gate = new Promise<void>((done) => { release = done; });
+      this.queue = previous.then(() => gate);
+    }
+    void (async () => {
+      if (mutation) await previous;
       const originalJson = res.json.bind(res);
       const user = this.authenticate(req);
-      if (!user) { release(); originalJson.call(res.status(401), { error: "Sessão expirada ou inválida." }); return; }
-      const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+      if (!user) {
+        if (mutation) release();
+        originalJson.call(res.status(401), { error: "Sessão expirada ou inválida." });
+        return;
+      }
+      let routeStarted = false;
+      res.once("close", () => {
+        // Leituras não alteram o estado local. Se o cliente cancelar uma leitura
+        // longa, libere a fila para os próximos pedidos do orçamento.
+        if (!mutation && routeStarted && !res.writableFinished) this.invalidate();
+      });
       let baseline: Record<string, any[]>;
       try {
-        await this.refresh();
-        baseline = captureBudgetState(this.db);
+        await this.refresh(mutation);
+        if (mutation) baseline = captureBudgetState(this.db);
       } catch {
-        release();
+        if (mutation) { this.activeMutation = false; release(); }
         originalJson.call(res.status(503), { error: "Não foi possível carregar o orçamento no Supabase. Tente novamente." });
         return;
       }
+      routeStarted = true;
+      if (res.destroyed) { if (mutation) { this.activeMutation = false; release(); } return; }
       let responded = false;
       res.json = ((body: any) => {
         if (responded) return res;
         responded = true;
         void (async () => {
           try {
+            if (!mutation) {
+              originalJson(body);
+              return;
+            }
             if (res.statusCode >= 400) {
               restoreBudgetState(this.db, baseline);
               this.invalidate();
-            } else if (mutation) {
+            } else {
               const snapshot = this.snapshot();
               const current = captureBudgetState(this.db);
               if (stateHash(current) !== stateHash(baseline)) {
@@ -221,17 +279,32 @@ export class BudgetCloudController {
             this.invalidate();
             res.removeHeader("Content-Length");
             originalJson.call(res.status(503), { error: error instanceof Error ? error.message : "Não foi possível confirmar a gravação no Supabase." });
-          } finally { release(); }
+          } finally {
+            if (mutation) {
+              this.activeMutation = false;
+              release();
+            }
+          }
         })();
         return res;
       }) as Response["json"];
-      res.once("finish", () => {
-        if (!responded) { restoreBudgetState(this.db, baseline); this.invalidate(); release(); }
+      if (mutation) res.once("finish", () => {
+        if (!responded) {
+          restoreBudgetState(this.db, baseline);
+          this.invalidate();
+          this.activeMutation = false;
+          release();
+        }
       });
-      // Não liberar ao desconectar: uma rota assíncrona pode continuar alterando
-      // a base de cálculo. A fila só avança após o término da resposta/commit.
+      // Escritas mantêm a fila até o commit, mesmo se o cliente desconectar.
       next();
-    }).catch(() => { release(); if (!res.headersSent) res.status(503).json({ error: "Persistência do orçamento indisponível." }); });
+    })().catch(() => {
+      if (mutation) {
+        this.activeMutation = false;
+        release();
+      }
+      if (!res.headersSent) res.status(503).json({ error: "Persistência do orçamento indisponível." });
+    });
   };
 }
 

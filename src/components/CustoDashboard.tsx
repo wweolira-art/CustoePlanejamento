@@ -233,29 +233,38 @@ export function CustoDashboard({ anomesFrom, anomesTo, safraLabel, safraId }: Pr
     setLoading(true);
     setMatrizLoading(false);
     setErr(null);
+    setData(null);
     setMatriz(null);
     const params = buildFiltroParams(filtros, {}, safraId);
-    try {
-      setData(await api.custoDashboard(params));
-    } catch (e) {
-      if (seq !== consultSeq.current) return;
-      setData(null);
-      setErr(e instanceof Error ? e.message : String(e));
-      setLoading(false);
-      return;
-    }
-    if (seq !== consultSeq.current) return;
-    setLoading(false);
     setMatrizLoading(true);
     try {
-      const next = await api.custoMatrizSubprocesso({ ...params, incluirEstagios: 0 });
-      if (seq === consultSeq.current) setMatriz(next);
+      // Dashboard e matriz são independentes e cada um consulta o Oracle.
+      // Executar em paralelo evita somar o tempo das duas etapas na tela.
+      const [dashboardResult, rateioResult] = await Promise.allSettled([
+        api.custoDashboard(params).then((dashboard) => {
+          if (seq === consultSeq.current) setData(dashboard);
+          return dashboard;
+        }),
+        api.custoMatrizSubprocesso({ ...params, incluirEstagios: 0 }).then((rateio) => {
+          if (seq === consultSeq.current) setMatriz(rateio);
+          return rateio;
+        }),
+      ]);
+      if (seq !== consultSeq.current) return;
+      const failure = [dashboardResult, rateioResult].find(
+        (result) => result.status === "rejected",
+      );
+      if (failure?.status === "rejected") {
+        setErr(failure.reason instanceof Error ? failure.reason.message : String(failure.reason));
+      }
     } catch (e) {
       if (seq !== consultSeq.current) return;
-      setMatriz(null);
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      if (seq === consultSeq.current) setMatrizLoading(false);
+      if (seq === consultSeq.current) {
+        setMatrizLoading(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -401,7 +410,11 @@ export function CustoDashboard({ anomesFrom, anomesTo, safraLabel, safraId }: Pr
             </button>
           </div>
         </form>
-        <ConsultaProgressBar active={loading} label="Consultando custo realizado…" className="consulta-progress--compact" />
+        <ConsultaProgressBar
+          active={loading}
+          label={matrizLoading ? "Consultando rateio por subprocesso…" : "Consultando custo realizado…"}
+          className="consulta-progress--compact"
+        />
       </section>
 
       {err ? (

@@ -4,6 +4,39 @@ import type { ConsumoOleoHidraulicoData } from "./lib/consumo-oleo-hidraulico";
 
 export type { LubrificacaoDashboardData, ConsumoOleoHidraulicoData };
 const AUTH_STORAGE_KEY = "pa_auth_token";
+const API_TIMEOUT_MS = 30_000;
+// Consultas do relatório de custos podem levar vários minutos em períodos longos.
+// O Oracle permite até 5 minutos por consulta; damos margem para execução e retorno HTTP.
+const COST_REPORT_TIMEOUT_MS = 10 * 60_000;
+const CONTRACT_OCCURRENCES_TIMEOUT_MS = 10 * 60_000;
+
+async function request(url: string, init: RequestInit = {}, signal?: AbortSignal) {
+  const isCostReport = url.startsWith("/api/custo/") || url.startsWith("/api/custo-colheita?");
+  const isContractOccurrences = url.startsWith("/api/contract-control/ocorrencias?");
+  const timeoutMs = isCostReport
+    ? COST_REPORT_TIMEOUT_MS
+    : isContractOccurrences
+      ? CONTRACT_OCCURRENCES_TIMEOUT_MS
+      : API_TIMEOUT_MS;
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timer = window.setTimeout(() => controller.abort(new Error("Tempo limite ao conectar com a API.")), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted) {
+      const seconds = Math.round(timeoutMs / 1000);
+      const route = url.split("?", 1)[0];
+      const reportName = isCostReport || isContractOccurrences ? ` no relatório (${route})` : "";
+      throw new Error(`A API demorou mais de ${seconds} segundos para responder${reportName}. Verifique se o servidor está ativo e tente novamente.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
 
 function authHeaders(extra?: Record<string, string>) {
   const token = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -38,13 +71,13 @@ const fail = async (res: Response): Promise<never> => {
 };
 
 const get = async <T>(url: string, signal?: AbortSignal): Promise<T> => {
-  const res = await fetch(url, { headers: authHeaders(), signal });
+  const res = await request(url, { headers: authHeaders() }, signal);
   if (!res.ok) await fail(res);
   return res.json() as Promise<T>;
 };
 
 const send = async <T>(url: string, method: string, body?: unknown): Promise<T> => {
-  const res = await fetch(url, {
+  const res = await request(url, {
     method,
     headers: authHeaders({ "Content-Type": "application/json" }),
     body: body == null ? undefined : JSON.stringify(body),
@@ -166,6 +199,8 @@ export interface LineItem {
   product_code: string | null;
   item_type: string | null;
   description: string;
+  observation?: string | null;
+  empenho_override?: string | null;
   is_group: number;
   activity_id: number | null;
   material_id: number | null;
@@ -2488,6 +2523,7 @@ export interface BudgetStorageStatus {
 
 export const api = {
   budgetStorageStatus: (signal?: AbortSignal) => get<BudgetStorageStatus>("/api/storage/status", signal),
+  health: () => get<{ ok: boolean; budgetStorage: "supabase" | "sqlite" }>("/api/health"),
   login: (email: string, password: string) => send<AuthSession>("/api/auth/login", "POST", { email, password }),
   me: () => get<{ user: AuthUser }>("/api/auth/me"),
   logout: () => send<{ ok: boolean }>("/api/auth/logout", "POST"),
@@ -2741,18 +2777,26 @@ export const api = {
     return get<{ dados: Record<string, unknown>[] }>(`/api/custo/funcionarios?${q}`);
   },
   premissas: () => get<DashboardData["kpis"]>("/api/premissas"),
-  custoColheita: (filtro: { anomesInicio: string; anomesFim: string; safraId?: number; preferirLocal?: boolean }) => {
+  custoColheita: (filtro: { anomesInicio: string; anomesFim: string; safraId?: number; preferirLocal?: boolean; atualizarOracle?: boolean }) => {
     const q = new URLSearchParams({
       anomesInicio: filtro.anomesInicio,
       anomesFim: filtro.anomesFim,
     });
     if (filtro.safraId != null) q.set("safraId", String(filtro.safraId));
     if (filtro.preferirLocal) q.set("preferirLocal", "1");
+    if (filtro.atualizarOracle) q.set("atualizarOracle", "1");
     return get<{
       safraId: number;
       anomesInicio: string;
       anomesFim: string;
       oracleConsultado: boolean;
+      cacheOracle?: boolean;
+      cacheDesatualizado?: boolean;
+      oracleAtualizadoEm?: string;
+      custoAdministracaoAgricola?: number;
+      custoAdministracaoAgricolaManual?: number;
+      custoAdministracaoAgricolaMecanizada?: number;
+      moagemOracle?: number;
       secoes: { titulo: string; linhas: { objeto: string; custo: number; custoOracle: number; armazenado: boolean }[] }[];
     }>(`/api/custo-colheita?${q}`);
   },

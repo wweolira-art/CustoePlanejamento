@@ -648,11 +648,17 @@ table.data.cost-center tr.total td {
 }
 .activity-name-row .combo { flex: 1; min-width: 0; }
 .activity-name-row .combo.compact { flex: 0 0 auto; }
-.activity-name-cell .cost-object-desc {
-  max-width: 100%;
+.activity-observation-input {
+  width: min(100%, 320px);
+  min-width: 120px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
   font-size: 11px;
-  color: var(--muted);
 }
+.activity-empenho-override { color: var(--muted); font-size: 10px; }
 .icon-btn.fold-btn {
   flex: 0 0 auto;
   width: 24px;
@@ -1741,6 +1747,20 @@ table.data td.col-cost-object .combo-input {
 }
 table.data tr.group .cost-object-desc { font-weight: 400; }
 .table-wrap { overflow-x: auto; }
+.colheita-horas-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.colheita-horas-table {
+  min-width: 860px;
+  table-layout: auto;
+}
+.colheita-horas-table th,
+.colheita-horas-table td {
+  white-space: nowrap;
+}
 .combo.compact { min-width: 48px; }
 .combo.compact .combo-input { min-width: 48px; width: 56px; padding: 2px 4px; font-size: 11px; }
 /* Lista suspensa de atividades/materiais (CatalogSearch) — texto preto */
@@ -3434,7 +3454,7 @@ table.data.resumo th.month-group {
 }
 .custo-colheita-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.6fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(420px, 0.6fr);
   gap: 16px;
   align-items: start;
 }
@@ -3467,32 +3487,320 @@ table.data.resumo th.month-group {
   background: #eef6e6;
 }
 .custo-colheita-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.custo-colheita-cards article.custo-colheita-card {
+  min-height: 104px;
+  box-sizing: border-box;
+  padding: 8px 10px 6px;
+  border: 1px solid rgba(72, 69, 43, .08);
+  border-radius: 20px;
+  background: #f0efdf;
+  box-shadow: 0 3px 4px rgba(25, 25, 20, .28);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
 }
-.custo-colheita-cards article {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
+.custo-colheita-card-main {
+  width: 100%;
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+.custo-colheita-card-icon {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e8e9e2;
+}
+.custo-colheita-card-icon-svg {
+  display: block;
+  width: 56px;
+  height: 56px;
+}
+.custo-colheita-card-metric {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.12;
 }
-.custo-colheita-cards strong {
-  font-size: 28px;
-  color: #1f9d45;
+.custo-colheita-cards .custo-colheita-card-metric strong {
+  color: #101010;
+  font-size: 23px;
+  font-weight: 800;
+  white-space: nowrap;
 }
-.custo-colheita-cards small {
-  color: #3d4a40;
+.custo-colheita-cards .custo-colheita-card-metric span {
+  color: #101010;
+  font-size: 21px;
+  font-weight: 800;
+}
+.custo-colheita-cards .custo-colheita-card small {
+  color: #101010;
+  font-size: 14px;
+  line-height: 1.15;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
 }
 @media (max-width: 900px) {
   .custo-colheita-layout {
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 520px) {
+  .custo-colheita-cards {
+    grid-template-columns: 1fr;
+  }
+  .custo-colheita-cards article.custo-colheita-card {
+    min-height: 104px;
+  }
+}
+.custo-colheita-view {
+  --colheita-blue: #221b44;
+  --colheita-blue-soft: #efeaf6;
+  --colheita-line: #d8d2e6;
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .kind-toggle .btn,
+.custo-colheita-view .btn:not(.primary):not(.danger) {
+  background: #fff;
+  color: var(--colheita-blue);
+  border-color: var(--colheita-blue);
+  box-shadow: none;
+}
+.custo-colheita-view .kind-toggle .btn:hover,
+.custo-colheita-view .btn:not(.primary):not(.danger):hover {
+  background: var(--colheita-blue-soft);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .btn.primary,
+.custo-colheita-view .btn.primary:hover {
+  background: var(--colheita-blue);
+  color: #fff;
+  border-color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita {
+  background: #fff;
+  color: var(--colheita-blue);
+  border: 1px solid var(--colheita-line);
+  box-shadow: 0 8px 24px rgba(34, 27, 68, .07);
+}
+.custo-colheita-view .custo-colheita h2,
+.custo-colheita-view .custo-colheita-nota {
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-filtro label {
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-filtro input,
+.custo-colheita-view .custo-colheita-tabela input {
+  background: #fff;
+  color: var(--colheita-blue);
+  border-color: var(--colheita-line);
+}
+.custo-colheita-view .custo-colheita-tabela {
+  background: #fff;
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-tabela th,
+.custo-colheita-view .custo-colheita-tabela td {
+  border-color: var(--colheita-line);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-tabela thead th {
+  background: var(--colheita-blue);
+  color: #fff;
+}
+.custo-colheita-view .custo-colheita-destaque th,
+.custo-colheita-view .custo-colheita-destaque td {
+  background: var(--colheita-blue-soft);
+  color: var(--colheita-blue);
+}
+.custo-colheita-view .custo-colheita-cards article.custo-colheita-card {
+  background: #f0efdf;
+  border: 1px solid var(--colheita-line);
+  color: #101010;
+}
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card-metric strong,
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card-metric span,
+.custo-colheita-view .custo-colheita-cards .custo-colheita-card small {
+  color: #101010;
+}
 .estagio-producao {
   margin-top: 18px;
+}
+.estagio-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+  max-width: 1040px;
+}
+.estagio-kpi {
+  min-height: 86px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 7px 12px 6px;
+  border: 1px solid rgba(72, 69, 43, .1);
+  border-radius: 20px;
+  background: #f0efdf;
+  box-shadow: 0 3px 4px rgba(25, 25, 20, .24);
+  color: #101010;
+}
+.estagio-kpi-icone {
+  grid-row: 1 / 3;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8e9e2;
+}
+.estagio-kpi-icone svg {
+  width: 48px;
+  height: 48px;
+}
+.estagio-kpi-medida {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+  color: #101010;
+}
+.estagio-kpi-medida strong {
+  font-size: 22px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.estagio-kpi-medida b {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 800;
+}
+.estagio-kpi-medida--inline {
+  flex-direction: row;
+  gap: 4px;
+}
+.estagio-kpi-medida--inline b {
+  margin-top: 0;
+}
+.estagio-kpi small {
+  grid-column: 2;
+  color: #101010;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+}
+.estagio-producao-view {
+  --estagio-blue: #221b44;
+  --estagio-blue-soft: #efeaf6;
+  --estagio-line: #d8d2e6;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .lead,
+.estagio-producao-view h3,
+.estagio-producao-view h4,
+.estagio-producao-view .toggle-caption {
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .panel {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+  box-shadow: 0 8px 24px rgba(34, 27, 68, .07);
+}
+.estagio-producao-view .panel h3,
+.estagio-producao-view .estagio-parametros thead th {
+  background: var(--estagio-blue);
+  color: #fff;
+  border-color: var(--estagio-blue);
+}
+.estagio-producao-view .kind-toggle .btn,
+.estagio-producao-view .btn:not(.primary):not(.danger) {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-blue);
+  box-shadow: none;
+}
+.estagio-producao-view .kind-toggle .btn:hover,
+.estagio-producao-view .btn:not(.primary):not(.danger):hover {
+  background: var(--estagio-blue-soft);
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .btn.primary,
+.estagio-producao-view .btn.primary:hover {
+  background: var(--estagio-blue);
+  color: #fff;
+  border-color: var(--estagio-blue);
+}
+.estagio-producao-view input,
+.estagio-producao-view select {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+  accent-color: var(--estagio-blue);
+}
+.estagio-producao-view input:focus,
+.estagio-producao-view select:focus {
+  border-color: var(--estagio-blue);
+  box-shadow: 0 0 0 3px rgba(34, 27, 68, .12);
+}
+.estagio-producao-view .estagio-producao-table thead th {
+  background: var(--estagio-blue);
+  color: #fff;
+}
+.estagio-producao-view .estagio-producao-table td {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+}
+.estagio-producao-view .estagio-producao-table .estagio-grupo td,
+.estagio-producao-view .estagio-producao-table .estagio-total td {
+  background: var(--estagio-blue-soft);
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-producao-table .estagio-preco td,
+.estagio-producao-view .estagio-producao-table .estagio-margem td {
+  background: #f6f4fa;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-parametros table {
+  background: #fff;
+  color: var(--estagio-blue);
+}
+.estagio-producao-view .estagio-parametros th,
+.estagio-producao-view .estagio-parametros td,
+.estagio-producao-view .estagio-parametros tbody th,
+.estagio-producao-view .estagio-parametros tbody td {
+  background: #fff;
+  color: var(--estagio-blue);
+  border-color: var(--estagio-line);
+}
+.estagio-producao-view .estagio-parametros tbody th small,
+.estagio-producao-view .estagio-parametros-nota {
+  color: #625b7a;
+}
+.estagio-producao-view .estagio-parametros input.estagio-parametro-input {
+  color: var(--estagio-blue);
+  -webkit-text-fill-color: var(--estagio-blue);
+  border-color: var(--estagio-line);
 }
 .estagio-arrendamento {
   margin-top: 16px;
@@ -3505,6 +3813,17 @@ table.data.resumo th.month-group {
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
   gap: 16px;
   align-items: start;
+}
+@media (max-width: 720px) {
+  .estagio-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+@media (max-width: 460px) {
+  .estagio-kpis {
+    grid-template-columns: 1fr;
+  }
 }
 .estagio-producao-table thead th {
   background: #1f9d45;

@@ -81,6 +81,20 @@ test("alterações remotas renovam a base de cálculo antes de responder", async
   } finally { await f.close(); }
 });
 
+test("gravação após atualização remota não aguarda a si própria", async () => {
+  const f = await fixture();
+  try {
+    f.externalChange();
+    const res = await fetch(`${f.url}/api/lines/1`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: "edição após atualização" }), signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(f.remote().revisao, 3);
+    assert.equal(f.remote().estado.tables.lines[0].description, "edição após atualização");
+  } finally { await f.close(); }
+});
+
 test("erro de validação desfaz escrita parcial sem enviar ao Supabase", async () => {
   const f = await fixture();
   try {
