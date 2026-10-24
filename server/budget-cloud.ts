@@ -39,7 +39,8 @@ export function restoreBudgetState(db: Database.Database, tables: Record<string,
     if (!allowed.has(table) || !Array.isArray(rows)) throw new Error("Estado remoto de orçamento inválido.");
     const cols = new Set((db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[]).map((c) => c.name));
     if (!cols.size) throw new Error(`Atualize a base de cálculo: tabela ${table} ausente.`);
-    for (const row of rows) if (Object.keys(row).some((c) => !cols.has(c))) throw new Error(`Atualize a base de cálculo: colunas de ${table} incompatíveis.`);
+    const unknown = [...new Set(rows.flatMap((row) => Object.keys(row)))].filter((column) => !cols.has(column));
+    if (unknown.length) throw new Error(`Colunas de ${table} incompatíveis: ${unknown.join(", ")}. Atualize o aplicativo com git pull e reinicie a API.`);
   }
   const foreignKeys = db.pragma("foreign_keys", { simple: true });
   db.pragma("foreign_keys = OFF");
@@ -146,7 +147,7 @@ export async function persistCloudBudget(state: CloudState, revision: number, sn
 
 export function budgetPath(path: string) {
   return /^\/api\/(?:sheets|lines|categories|premissas|safras|calc-rules|distributions|activities|materials|cost-objects|fazendas|category-catalog|areas|seed-radius-tariffs|activity-links|un-realizado-sources|funcionario-orcamento|orcado-realizado)(?:\/|$)/.test(path)
-    || ["/api/dashboard", "/api/resumo", "/api/orcado-realizado", "/api/externo/orcamento", "/api/reset", "/api/ficha-estagio", "/api/parametros-tecnicos", "/api/custo-colheita", "/api/parametros-tecnicos/extrair", "/api/empenhos", "/api/empenhos/import-oracle"].includes(path);
+    || ["/api/dashboard", "/api/resumo", "/api/orcado-realizado", "/api/externo/orcamento", "/api/reset", "/api/ficha-estagio", "/api/parametros-tecnicos", "/api/parametros-tecnicos/periodos", "/api/custo-colheita", "/api/parametros-tecnicos/extrair", "/api/empenhos", "/api/empenhos/import-oracle"].includes(path);
 }
 
 export class BudgetCloudController {

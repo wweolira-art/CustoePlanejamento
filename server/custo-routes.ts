@@ -26,7 +26,8 @@ import {
   consultarDiagnosticoFluxoOficina,
 } from "./custo/services/rateioAtividadeService.js";
 import { consultarRateioDistribuicao } from "./custo/services/distribuicaoGastoRateioService.js";
-import { consultarMatrizSubprocesso } from "./custo/services/rateioMatrizSubprocessoService.js";
+import { consultarMatrizSubprocesso, consultarArrendamentoSafra } from "./custo/services/rateioMatrizSubprocessoService.js";
+import { listSafras } from "./safras.js";
 import { consultarDiagnosticoDistribuicao } from "./custo/services/diagnosticoDistribuicaoService.js";
 import {
   listarDimensoesObjetoCusto,
@@ -165,6 +166,24 @@ export function registerCustoRoutes(app: Express) {
     } catch (err) {
       handleCustoError(res, err);
     }
+  });
+
+  app.get("/api/custo/arrendamento-por-safra", async (_req, res) => {
+    try {
+      const dados = [];
+      for (const safra of listSafras().sort((a, b) => a.code.localeCompare(b.code))) {
+        const periodo = anomesRangeForSafra(safra.id);
+        try {
+          dados.push({ label: safra.label, ...periodo,
+            ...await consultarArrendamentoSafra(periodo) });
+        } catch {
+          dados.push({ label: safra.label, ...periodo,
+            custo: null, area: null, rHa: null, possuiCustos: false,
+            erro: "Não foi possível consultar esta safra." });
+        }
+      }
+      res.json({ dados });
+    } catch (err) { handleCustoError(res, err); }
   });
 
   app.get("/api/custo/rateio/matriz-subprocesso", async (req, res) => {

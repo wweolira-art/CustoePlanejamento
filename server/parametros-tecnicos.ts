@@ -171,6 +171,14 @@ export function lerParametrosTecnicos(
   };
 }
 
+export function listarPeriodosParametrosTecnicos() {
+  ensureParametrosTecnicos();
+  return db.prepare(`SELECT p.safra_id AS safraId, s.label AS safraLabel,
+      p.anomes_inicio AS anomesInicio, p.anomes_fim AS anomesFim
+    FROM parametros_tecnicos p JOIN safras s ON s.id = p.safra_id
+    ORDER BY p.anomes_inicio DESC, p.anomes_fim DESC, s.code DESC`).all();
+}
+
 export async function extrairParametrosTecnicos(
   safraId: number | null | undefined,
   anomesInicio: unknown,

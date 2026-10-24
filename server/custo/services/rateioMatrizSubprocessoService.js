@@ -2,6 +2,11 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { db } from '../../db.js';
+import { lerParametrosTecnicos } from '../../parametros-tecnicos.js';
+import { destinoEstagio, colunaRateioEstagio } from './destinoEstagio.js';
+import { grupoObjetoOperacional, OBJETOS_MAO_OBRA, OBJETOS_INSUMOS } from './grupoObjetoOperacional.js';
+import { listHarvestAreas } from '../../harvest-areas.js';
+import { indicadorArrendamento } from './arrendamentoSafra.js';
 import { fetchMatrizRhaHectares } from '../../un-realizado.js';
 import { executeQuery } from '../utils/oracle.js';
 import { premissasKpis } from '../../calc.js';
@@ -53,14 +58,10 @@ export const COLUNAS_SUBPROCESSO = [
     haKey: 'tratos_soca',
     sheetName: COLUNAS_SHEET.tratos_soca,
   },
-];
-
-/** Colunas que recebem parcela da irrigação (proc 4), proporcional às ha do Un realizado. */
-const COLUNAS_DISTRIBUICAO_IRRIGACAO = [
-  'preparo',
-  'plantio',
-  'tratos_planta',
-  'tratos_soca',
+  { key: 'colheita', label: 'Sistema de colheita', haKey: 'colheita' },
+  { key: 'irrigacao', label: 'Irrigação', haKey: 'irrigacao' },
+  { key: 'administrativo', label: 'Administrativo', haKey: 'administrativo' },
+  { key: 'arrendamento', label: 'Arrendamento', haKey: 'arrendamento' },
 ];
 
 /** Colunas que recebem rateio direto do Oracle (antes de derivar formação). */
@@ -70,6 +71,10 @@ const COLUNAS_ROTEAMENTO = [
   'tratos_planta',
   'colheita_mudas',
   'tratos_soca',
+  'colheita',
+  'irrigacao',
+  'administrativo',
+  'arrendamento',
 ];
 
 /** Partes que compõem a coluna Formação. */
@@ -119,6 +124,9 @@ function bindsConsulta(filtros = {}) {
 
 function mapLinha(row) {
   return {
+    origemObjeto: toNumber(row.ORIGEM_OBJETO ?? row.origem_objeto),
+    origemDescricao: row.ORIGEM_DESCRICAO ?? row.origem_descricao ?? null,
+    destinoObjeto: toNumber(row.DESTINO_OBJETO ?? row.destino_objeto),
     destProcesso: toNumber(row.DEST_PROCESSO ?? row.dest_processo),
     destSubprocesso: toNumber(row.DEST_SUBPROCESSO ?? row.dest_subprocesso),
     destDescricao: row.DEST_DESCRICAO ?? row.dest_descricao ?? null,
@@ -198,91 +206,14 @@ function estagiosVazios() {
   };
 }
 
-function isConservacaoSolo(linha) {
-  const desc = `${linha.destDescricao || ''} ${linha.itemDescricao || ''}`.toUpperCase();
-  return desc.includes('CONSERV');
-}
-
-function acumularEstagio(buckets, meta, col, destProcesso, linha, valor) {
+function acumularEstagio(buckets, meta, col, linha, valor) {
   if (!(Math.abs(valor) > 0.0001)) return;
-  if (destProcesso === 5) {
-    buckets.colheitaMudas += valor;
-    return;
-  }
-  if (meta?.chave === 'royalties' || meta?.secao === 'adm') {
-    if (meta.chave === 'royalties') buckets.arrendamento += valor;
-    else buckets.administrativo += valor;
-    return;
-  }
-  if (col === 'colheita_mudas') {
-    buckets.colheitaMudas += valor;
-    return;
-  }
-  if (col === 'preparo') {
-    if (isConservacaoSolo(linha)) buckets.conservacao += valor;
-    else buckets.preparo += valor;
-    return;
-  }
-  if (col === 'plantio') {
-    buckets.plantio += valor;
-    return;
-  }
-  if (col === 'tratos_planta') {
-    buckets.tratosPlanta += valor;
-    return;
-  }
-  if (col === 'tratos_soca') {
-    if (destProcesso === 3) buckets.colheita += valor;
-    else buckets.manutencao += valor;
-    return;
-  }
-  acumularDestinoSemColuna(buckets, linha, valor);
+  buckets[destinoEstagio(linha, meta, col)] += valor;
 }
 
-/** Destino fora de 1/2/3/5 (ex.: matéria-prima, processo 6) ainda entra num estágio. */
 function acumularDestinoSemColuna(buckets, linha, valor) {
   if (!(Math.abs(valor) > 0.0001)) return;
-  const meta = classificarLinha(linha);
-  if (meta?.chave === 'royalties') {
-    buckets.arrendamento += valor;
-    return;
-  }
-  if (linha.destProcesso === 5 || isColheitaMudas(linha)) {
-    buckets.colheitaMudas += valor;
-    return;
-  }
-  buckets.administrativo += valor;
-}
-
-function aplicarLinhaIrrigacao(lin, ha, ensureRow, colTotais) {
-  const row = ensureRow(metaIrrigacao());
-  if (lin.destProcesso === 4) {
-    const parts = distribuirIrrigacao(lin.valor, ha);
-    if (!parts) return;
-    for (const [col, parte] of Object.entries(parts)) {
-      if (!(parte > 0.0001)) continue;
-      row.celulas[col].valor += parte;
-      colTotais[col] += parte;
-    }
-    return;
-  }
-  const col = colunaDestino(lin);
-  if (!col) return;
-  row.celulas[col].valor += lin.valor;
-  colTotais[col] += lin.valor;
-}
-
-/** Rateio proc 4 → colunas preparo/plantio/tratos planta/tratos soca (peso = ha). */
-function distribuirIrrigacao(valor, ha) {
-  const pesos = COLUNAS_DISTRIBUICAO_IRRIGACAO.map((key) => ({
-    key,
-    peso: ha[key] || 0,
-  }));
-  const totalPeso = pesos.reduce((sum, item) => sum + item.peso, 0);
-  if (!(totalPeso > 0)) return null;
-  return Object.fromEntries(
-    pesos.map((item) => [item.key, (valor * item.peso) / totalPeso])
-  );
+  buckets[destinoEstagio(linha, classificarLinha(linha), null)] += valor;
 }
 
 function metaMaquina() {
@@ -349,8 +280,21 @@ function metaAdm(label = 'Administrativo') {
 }
 
 function classificarLinha(linha) {
+  if (OBJETOS_INSUMOS.has(Number(linha.origemObjeto))) {
+    return { secao: 'insumos', grupo: 'insumo', chave: `ins-obj-${Number(linha.origemObjeto)}`,
+      label: linha.origemDescricao?.trim() || `Objeto de custo ${linha.origemObjeto}`, indent: 1 };
+  }
+  if (OBJETOS_MAO_OBRA.has(Number(linha.origemObjeto))) return metaMaoObra();
   const grupoEmp = linha.codGrupoempenho;
   const empDesc = String(linha.empenhoDescricao || '').toLowerCase();
+
+  const grupoObjeto = grupoObjetoOperacional(linha.origemDescricao);
+  const empenhoSeparado = grupoEmp === 24 || grupoEmp === 14
+    || /royalt|arrend|imposto|taxa|mat[eé]ria-prima/.test(empDesc);
+  if (!empenhoSeparado) {
+    if (grupoObjeto === 'maquina') return metaMaquina();
+    if (grupoObjeto === 'mao_obra') return metaMaoObra();
+  }
 
   if (isMaquina(linha)) {
     return metaMaquina();
@@ -421,8 +365,11 @@ function fonteApontamentoHa({ units, label, nota, sheetName, sheetTitle }) {
   };
 }
 
-async function unidadesPorColuna(filtros = {}, { irrigacao = false, buscarOracle = true } = {}) {
-  const rhaHa = buscarOracle
+export async function unidadesPorColuna(filtros = {}, { irrigacao = true, buscarOracle = true } = {}) {
+  const parametros = lerParametrosTecnicos(filtros.safraId, filtros.anomesInicio, filtros.anomesFim);
+  const rhaHa = parametros.armazenado
+    ? { planta: parametros.areaPlantio, soca: parametros.areaSoca, irrigacao: parametros.areaIrrigacao }
+    : buscarOracle
     ? await fetchMatrizRhaHectares(filtros.anomesInicio, filtros.anomesFim, undefined, irrigacao)
     : { planta: 0, soca: 0, irrigacao: 0 };
   const sheetRows = db
@@ -479,6 +426,13 @@ async function unidadesPorColuna(filtros = {}, { irrigacao = false, buscarOracle
         label: 'automotivo.itens_apontamento · op. 41 (área)',
         nota: 'Colheita de mudas compõe a formação e usa a mesma área da operação 41',
       });
+    } else if (['colheita', 'irrigacao', 'administrativo', 'arrendamento'].includes(col.key)) {
+      const areaTotal = (rhaHa.planta || 0) + (rhaHa.soca || 0);
+      units = col.key === 'colheita' ? rhaHa.soca || 0
+        : col.key === 'irrigacao' ? rhaHa.irrigacao || 0
+        : col.key === 'arrendamento' && parametros.armazenado ? parametros.areaArrendada
+        : areaTotal;
+      fonte = fonteApontamentoHa({ units, label: 'Estágio de produção', nota: 'Mesma base de área do estágio correspondente' });
     } else {
       fonte = {
         sheetName: sheetName ?? null,
@@ -494,6 +448,14 @@ async function unidadesPorColuna(filtros = {}, { irrigacao = false, buscarOracle
     fontes[col.key] = fonte;
   }
 
+  if (parametros.armazenado) {
+    for (const fonte of Object.values(fontes)) {
+      if (!fonte.configurado) continue;
+      fonte.sourceKind = 'parametros_tecnicos';
+      fonte.sourceLabel = 'Estágio de produção · parâmetros armazenados';
+      fonte.nota = 'Mesma área armazenada para esta safra e período em Estágio de produção';
+    }
+  }
   unidades.irrigacao = rhaHa.irrigacao || 0;
   return { unidades, fontes };
 }
@@ -515,10 +477,7 @@ function celulaFormacao(row, totalFormacao, haFormacao) {
 }
 
 function totalLinhaUnico(row) {
-  return (
-    COLUNAS_FORMACAO_PARTES.reduce((sum, key) => sum + (row.celulas[key]?.valor || 0), 0) +
-    (row.celulas.tratos_soca?.valor || 0)
-  );
+  return COLUNAS_ROTEAMENTO.reduce((sum, key) => sum + (row.celulas[key]?.valor || 0), 0);
 }
 
 function sortItensSecao(a, b) {
@@ -588,7 +547,7 @@ function montarEstagiosProducao(valores, ha, tons, totalPool = 0) {
     { chave: 'colheita', label: 'Sistema de colheita', valor: valores.colheita, ha: haSoca },
     { chave: 'irrigacao', label: 'Irrigação', valor: valores.irrigacao, ha: ha.irrigacao || 0 },
     { chave: 'administrativo', label: 'Administrativo', valor: valores.administrativo, ha: haTotal },
-    { chave: 'arrendamento', label: 'Arrendamento', valor: valores.arrendamento, ha: haTotal },
+    { chave: 'arrendamento', label: 'Arrendamento', valor: valores.arrendamento, ha: ha.arrendamento ?? haTotal },
   ];
   const somaGrupos = grupos.reduce((sum, row) => sum + row.valor, 0);
   // Custo total é o lançamento do período. A sobra fecha no Administrativo,
@@ -687,8 +646,12 @@ function parametrosArea(estagios) {
   };
 }
 
-function montarMatriz(linhas, ha, tons, totalPool = 0) {
+export function montarMatriz(linhas, ha, tons, totalPool = 0) {
+  const areaTotal = (ha.planta || ha.formacao || ha.preparo || 0) + (ha.soca || ha.tratos_soca || 0);
+  ha = { ...ha, colheita: ha.colheita ?? ha.soca ?? ha.tratos_soca ?? 0,
+    administrativo: ha.administrativo ?? areaTotal, arrendamento: ha.arrendamento ?? areaTotal };
   const rowMap = new Map();
+  const origens = [];
   const colTotais = Object.fromEntries(
     COLUNAS_ROTEAMENTO.map((key) => [key, 0])
   );
@@ -711,26 +674,38 @@ function montarMatriz(linhas, ha, tons, totalPool = 0) {
     return rowMap.get(meta.chave);
   };
 
-  for (const lin of linhas) {
+  const diferenca = totalPool > 0.0001 ? totalPool - linhas.reduce((sum, lin) => sum + lin.valor, 0) : 0;
+  const linhasRateio = Math.abs(diferenca) > 0.005
+    ? [...linhas, { valor: diferenca, conciliacao: true, origemDescricao: 'Conciliação com o total do período' }]
+    : linhas;
+  for (const lin of linhasRateio) {
     if (!(Math.abs(lin.valor) > 0.0001)) continue;
 
-    if (isCustoIrrigacao(lin)) {
-      aplicarLinhaIrrigacao(lin, ha, ensureRow, colTotais);
-      estagioValores.irrigacao += lin.valor;
-      continue;
-    }
+    const meta = lin.conciliacao ? { ...metaAdm('Conciliação do período'), chave: 'conciliacao' } : classificarLinha(lin);
+    const destino = destinoEstagio(lin, meta, colunaDestino(lin));
+    estagioValores[destino] += lin.valor;
+    const col = colunaRateioEstagio(destino);
+    if (!col) continue;
 
-    const col = colunaDestino(lin);
-    if (!col) {
-      acumularDestinoSemColuna(estagioValores, lin, lin.valor);
-      continue;
-    }
-
-    const meta = classificarLinha(lin);
     const row = ensureRow(meta);
     row.celulas[col].valor += lin.valor;
     colTotais[col] += lin.valor;
-    acumularEstagio(estagioValores, meta, col, lin.destProcesso, lin, lin.valor);
+    origens.push({
+      linhaChave: meta.chave,
+      secao: meta.secao,
+      coluna: col,
+      origemObjeto: lin.origemObjeto || null,
+      origemDescricao: lin.origemDescricao || null,
+      destinoObjeto: lin.destinoObjeto || null,
+      destinoDescricao: lin.destDescricao || null,
+      grupoEmpenhoCodigo: lin.codGrupoempenho || null,
+      grupoEmpenho: lin.grupoEmpenho || null,
+      empenhoCodigo: lin.codEmpenho || null,
+      empenho: lin.empenhoDescricao || null,
+      itemCodigo: lin.codItemCusto || null,
+      item: lin.itemDescricao || null,
+      valor: lin.valor,
+    });
   }
 
   const totalFormacao = COLUNAS_FORMACAO_PARTES.reduce(
@@ -884,6 +859,8 @@ function montarMatriz(linhas, ha, tons, totalPool = 0) {
       };
     }),
     linhas: linhasOut.map(stripInternalCells),
+    origens,
+    toneladas: tons > 0 ? tons : null,
     hectareas: Object.fromEntries(
       COLUNAS_SUBPROCESSO.map((col) => [col.key, ha[col.haKey] || 0])
     ),
@@ -891,7 +868,7 @@ function montarMatriz(linhas, ha, tons, totalPool = 0) {
   };
 }
 
-function montarSomenteEstagios(linhas, ha, tons, totalPool = 0) {
+export function montarSomenteEstagios(linhas, ha, tons, totalPool = 0) {
   const estagioValores = estagiosVazios();
   for (const lin of linhas) {
     if (!(Math.abs(lin.valor) > 0.0001)) continue;
@@ -904,7 +881,7 @@ function montarSomenteEstagios(linhas, ha, tons, totalPool = 0) {
       acumularDestinoSemColuna(estagioValores, lin, lin.valor);
       continue;
     }
-    acumularEstagio(estagioValores, classificarLinha(lin), col, lin.destProcesso, lin, lin.valor);
+    acumularEstagio(estagioValores, classificarLinha(lin), col, lin, lin.valor);
   }
   return {
     estagios: montarEstagiosProducao(estagioValores, ha, tons, totalPool),
@@ -916,7 +893,9 @@ const matrizCache = new Map();
 const matrizInflight = new Map();
 
 function chaveMatriz(filtros, incluirEstagios) {
+  const parametros = lerParametrosTecnicos(filtros.safraId, filtros.anomesInicio, filtros.anomesFim);
   return JSON.stringify({
+    parametros: [parametros.areaPlantio, parametros.areaSoca, parametros.areaIrrigacao, parametros.areaArrendada, parametros.armazenado],
     anomesInicio: filtros.anomesInicio ?? null,
     anomesFim: filtros.anomesFim ?? null,
     safraId: filtros.safraId ?? null,
@@ -959,6 +938,33 @@ export async function consultarMatrizSubprocesso(filtros = {}) {
   return run;
 }
 
+export async function consultarArrendamentoSafra(filtros, { consultar = executeQuery } = {}) {
+  const result = await consultar(MATRIZ_LINHAS_SQL, bindsConsulta(filtros));
+  const linhas = (result.rows || []).map(mapLinha);
+  const estagios = montarSomenteEstagios(linhas, {}, 0).estagios;
+  const custo = estagios.linhas.find((linha) => linha.chave === 'arrendamento')?.valor || 0;
+  const parametros = lerParametrosTecnicos(filtros.safraId, filtros.anomesInicio, filtros.anomesFim);
+  // O período identifica a safra no histórico. Cadastros antigos podem ter sido
+  // gravados com o período correto e o seletor de safra de outro ano.
+  const porPeriodo = parametros.armazenado ? [] : db.prepare(
+    'SELECT safra_id, area_arrendada FROM parametros_tecnicos WHERE anomes_inicio = ? AND anomes_fim = ?',
+  ).all(String(filtros.anomesInicio), String(filtros.anomesFim));
+  const areasPeriodo = new Set(porPeriodo.map((row) => Number(row.area_arrendada)));
+  const periodoUnico = areasPeriodo.size === 1;
+  const conflito = areasPeriodo.size > 1;
+  const areas = parametros.armazenado || periodoUnico || conflito ? [] : listHarvestAreas(filtros.safraId).areas;
+  const arrendadas = areas.filter((area) => /arrend/i.test(area.description));
+  const area = parametros.armazenado ? parametros.areaArrendada
+    : periodoUnico ? Number(porPeriodo[0].area_arrendada)
+    : arrendadas.reduce((sum, item) => sum + (Number(item.area) || 0), 0);
+  return { custo, area, rHa: indicadorArrendamento(custo, area),
+    fonteArea: parametros.armazenado ? 'Parâmetros de Estágio de produção'
+      : periodoUnico ? `Parâmetros de Estágio de produção do período ${filtros.anomesInicio} a ${filtros.anomesFim}`
+      : 'Cadastros de áreas arrendadas da safra',
+    ...(conflito ? { erro: 'Há áreas arrendadas divergentes cadastradas para este período.' } : {}),
+    possuiCustos: linhas.length > 0 };
+}
+
 async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagios = false) {
   const eff = filtrosEff(filtros);
   const binds = bindsConsulta(filtros);
@@ -968,7 +974,7 @@ async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagi
   const [result, totalPool, toneladas, unidadesFontes] = await Promise.all([
     executeQuery(MATRIZ_LINHAS_SQL, binds),
     consultarTotalLancamentoConsolidado(eff),
-    incluirEstagios ? moagemEntradaCana(eff) : Promise.resolve(0),
+    moagemEntradaCana(eff),
     incluirEstagios
       ? unidadesPorColuna(eff, { buscarOracle: false })
       : unidadesPorColuna(eff),
@@ -982,8 +988,8 @@ async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagi
       : montarMatriz(
           linhas,
           unidades,
-          incluirEstagios ? toneladas : 0,
-          incluirEstagios ? totalPool : 0
+          toneladas,
+          totalPool
         );
   if (!incluirEstagios) delete matriz.estagios;
   else if (matriz.estagios) matriz.estagios.parametros = parametrosArea(matriz.estagios);
@@ -1007,9 +1013,9 @@ async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagi
       ...matriz,
     };
   }
-  const totalMatriz =
-    (matriz.linhas[0]?.celulas?.formacao?.valor || 0) +
-    (matriz.linhas[0]?.celulas?.tratos_soca?.valor || 0);
+  const totalMatriz = matriz.colunas
+    .filter((col) => !['preparo', 'plantio', 'tratos_planta'].includes(col.key))
+    .reduce((sum, col) => sum + col.total, 0);
   const totalForaMatriz = Math.max(0, totalPool - totalMatriz);
 
   return {
@@ -1020,17 +1026,17 @@ async function calcularMatrizSubprocesso(filtros, incluirEstagios, somenteEstagi
     },
     logica: {
       colunas:
-        'Preparo 1/1, plantio 1/2, tratos planta 1/3, colheita de mudas (1/1 semente/muda), tratos soca proc 2 e colheita proc 3; formação = soma preparo + plantio + tratos planta + colheita de mudas',
+        'Preparo 1/1, plantio 1/2, tratos planta 1/3, colheita de mudas (1/1 semente/muda), manutenção de soqueira proc 2; sistema de colheita proc 3 separado; formação = soma preparo + plantio + tratos planta + colheita de mudas',
       irrigacao:
-        'Linha Irrigação/Fertirrigação: custos com origem ou destino proc 4 (incl. energia e demais empenhos), agregados sem separar grupo de empenho; destino proc 4 distribuído por ha, demais destinos na coluna do subprocesso',
+        'Custos com origem ou destino proc 4 ficam no estágio Irrigação e não compõem Formação nem Manutenção de soqueira',
       maquina:
         'Equip. automotivo/industrial (grupo_item 4/5), transportes de terceiros (18), aluguel de máquinas, manutenção (20), materiais/consumo (21), combustíveis (25), energia fora irrigação (23) e demais aluguéis operacionais (17)',
       insumos: 'Empenho grupo 24 (produtos e insumos) — uma linha por empenho',
       operacao:
-        'Operação = Irrigação/Fertirrigação, Máquina e Mão de obra (grupos 10, 19 e 22); sem linhas por grupo de empenho',
-      adm: 'Origem negócio 5 processo 1 + royalties/arrendamento quando aplicável',
+        'Operação = Máquina e Mão de obra (grupos 10, 19 e 22); irrigação permanece no seu estágio',
+      adm: 'Administrativo e arrendamento ficam nos respectivos estágios e não compõem Formação nem Manutenção de soqueira',
       rHa:
-        'Valor rateado ÷ ha do apontamento: preparo/plantio/tratos planta/formação usam automotivo.itens_apontamento.area com cod_operacaoagricola = 41; tratos soca usa agricola.apontamentoitem nas operações M13, M56, M80 e M342',
+        'Valor rateado ÷ área armazenada no Estágio de produção para a safra e período; sem parâmetros armazenados, usa ha do apontamento: preparo/plantio/tratos planta/formação usam automotivo.itens_apontamento.area com cod_operacaoagricola = 41; tratos soca usa agricola.apontamentoitem nas operações M13, M56, M80 e M342',
       unidades:
         'Preparo, plantio, tratos planta e formação → área da op. 41 em automotivo.itens_apontamento; tratos soca → área do apontamento agrícola (M13, M56, M80, M342); CORTE SEMENTE permanece no Un realizado só para detalhe da colheita de mudas',
       formacao:

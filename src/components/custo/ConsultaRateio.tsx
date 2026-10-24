@@ -1,3 +1,4 @@
+import { FiltroSuspenso } from "./FiltroSuspenso";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CustoDashboardData, type CustoDimensoesData } from "../../api";
 import {
@@ -275,7 +276,7 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
     listRows.length > 0;
 
   return (
-    <>
+    <div className="custo-tema-azul">
       <p className="lead">
         Consulta rateio da {safraLabel}, período {filtros.anomesInicio} a {filtros.anomesFim}.{" "}
         {subtitulo}
@@ -297,7 +298,7 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
       <section className="panel no-print">
         <h3>Filtros</h3>
         <form
-          className="form-grid"
+          className="form-grid custo-filtros-compactos"
           onSubmit={(e) => {
             e.preventDefault();
             void consultar();
@@ -321,7 +322,8 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
               required
             />
           </label>
-          <label>
+          <FiltroSuspenso titulo="Equipamento" valor={filtros.equipamento || "Todos"}>
+<label>
             Equipamento
             <input
               value={filtros.equipamento}
@@ -329,9 +331,11 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
               placeholder="Código ou parte"
             />
           </label>
+</FiltroSuspenso>
           {!ocultarFiltroObjeto ? (
             <>
-              <label>
+              <FiltroSuspenso titulo="Negócio" valor={filtros.negocios.length ? filtros.negocios.join(", ") : "Todos"}>
+<label>
                 Negócio
                 <select
                   multiple
@@ -356,7 +360,9 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
                   ))}
                 </select>
               </label>
-              <label>
+</FiltroSuspenso>
+              <FiltroSuspenso titulo="Processo" valor={filtros.processo || "Todos"}>
+<label>
                 Processo
                 <select
                   value={filtros.processo}
@@ -378,7 +384,9 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
                   ))}
                 </select>
               </label>
-              <label>
+</FiltroSuspenso>
+              <FiltroSuspenso titulo="Subprocesso" valor={filtros.subprocesso || "Todos"}>
+<label>
                 Subprocesso
                 <select
                   value={filtros.subprocesso}
@@ -394,7 +402,9 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
                   ))}
                 </select>
               </label>
-              <label>
+</FiltroSuspenso>
+              <FiltroSuspenso titulo="Atividade" valor={filtros.atividade || "Todas"}>
+<label>
                 Atividade
                 <select
                   value={filtros.atividade}
@@ -408,7 +418,9 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
                   ))}
                 </select>
               </label>
-              <label className="span-2">
+</FiltroSuspenso>
+              <FiltroSuspenso titulo="Objeto de custo" valor={filtros.objetoCusto || "Todos"}>
+<label className="span-2">
                 Objeto de custo
                 <select
                   value={filtros.objetoCusto}
@@ -422,6 +434,7 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
                   ))}
                 </select>
               </label>
+</FiltroSuspenso>
             </>
           ) : (
             <p className="lead span-2" style={{ margin: 0 }}>
@@ -601,6 +614,6 @@ export function ConsultaRateio({ anomesFrom, anomesTo, safraLabel }: Props) {
       {!loading && !err && !statusMsg ? (
         <p className="lead">Selecione a aba, informe o período e clique em Consultar.</p>
       ) : null}
-    </>
+    </div>
   );
 }

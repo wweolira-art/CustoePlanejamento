@@ -36,3 +36,20 @@ test("orçamento fica somente em memória; configurações continuam persistente
     rmSync(dir, { recursive: true });
   }
 });
+
+test("restaura observação e empenho do estado remoto sem perder valores ao recapturar", () => {
+  const db = new Database(":memory:");
+  try {
+    initializeBudgetMemory(db);
+    restoreBudgetState(db, {
+      sheets: [{ id: 1, name: "PLANTIO", title: "Plantio", kind: "cost_center", sort_order: 0, visible: 1 }],
+      categories: [{ id: 1, sheet_id: 1, name: "Materiais", sort_order: 0, catalog_id: null }],
+      lines: [{ id: 1, sheet_id: 1, category_id: 1, description: "Item", is_group: 0, sort_order: 0, observation: "Observação preservada", empenho_override: "00123" }],
+    });
+    db.prepare("UPDATE lines SET description = ? WHERE id = 1").run("Descrição atualizada");
+    const line = captureBudgetState(db).lines[0];
+    assert.equal(line.observation, "Observação preservada");
+    assert.equal(line.empenho_override, "00123");
+    assert.equal((db.prepare("SELECT count(*) AS n FROM main.sqlite_master WHERE name='lines'").get() as any).n, 0);
+  } finally { db.close(); }
+});

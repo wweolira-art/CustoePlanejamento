@@ -147,6 +147,23 @@ Não há gravação offline. O login Oracle/ORDS não foi substituído por Supab
 Auth. A sincronização de permissões e módulos fora do orçamento entre servidores
 não faz parte desta etapa.
 
+## 6. Conferir a origem dos dados em outro computador
+
+O Git não transfere o `.env`. Após `git pull`, verificar se o `.env` da máquina
+contém `BUDGET_STORAGE=supabase`, `SUPABASE_URL` e a chave secreta do mesmo projeto.
+Executar `npm install`, `npm run build`, parar a API antiga e iniciar `npm start`.
+
+Abrir `http://localhost:8789/api/health`: o campo `budgetStorage` precisa retornar
+`supabase`. Retorno sem esse campo indica API antiga. Retorno `sqlite` indica modo
+local. Na tela do orçamento, o indicador "Orçamento: Supabase" confirma uma
+consulta real à revisão remota; o projeto, revisão e última gravação aparecem
+ao passar o mouse. Falha na verificação não é apresentada como conexão confirmada.
+
+O endpoint autenticado `/api/storage/status` não retorna chaves nem dados de
+orçamento e não utiliza cache HTTP. A revisão é consultada a cada minuto e quando
+a janela ganha foco. Se o indicador não aparece após atualizar o projeto,
+recompilar o frontend, reiniciar a API e recarregar o navegador com Ctrl+F5.
+
 Após a retirada dos dados locais, não basta alterar o modo para voltar ao SQLite:
 isso criaria uma base nova. Uma recuperação local exige restaurar um backup ou
 exportar o estado remoto mais recente, com a API parada.

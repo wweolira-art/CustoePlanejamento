@@ -1048,7 +1048,39 @@ export interface CustoMatrizFonteUnidade {
   nota?: string;
 }
 
+export interface CustoMatrizOrigem {
+  linhaChave: string;
+  secao: string;
+  coluna: string;
+  origemObjeto: number | null;
+  origemDescricao: string | null;
+  destinoObjeto: number | null;
+  destinoDescricao: string | null;
+  grupoEmpenhoCodigo: number | null;
+  grupoEmpenho: string | null;
+  empenhoCodigo: number | null;
+  empenho: string | null;
+  itemCodigo: number | null;
+  item: string | null;
+  valor: number;
+}
+
+export interface ArrendamentoSafra {
+  safraId: number;
+  label: string;
+  anomesInicio: string;
+  anomesFim: string;
+  custo: number | null;
+  area: number | null;
+  rHa: number | null;
+  possuiCustos: boolean;
+  fonteArea?: string;
+  erro?: string;
+}
+
 export interface CustoMatrizSubprocessoData {
+  toneladas?: number | null;
+  origens?: CustoMatrizOrigem[];
   colunas: {
     key: string;
     label: string;
@@ -2445,7 +2477,17 @@ export interface SeedTransportSaveBody {
   itens: SeedTransportSaveItem[];
 }
 
+export interface BudgetStorageStatus {
+  provider: "supabase" | "sqlite";
+  connected: boolean;
+  revision: number | null;
+  updatedAt: string | null;
+  checkedAt: string;
+  project: string | null;
+}
+
 export const api = {
+  budgetStorageStatus: (signal?: AbortSignal) => get<BudgetStorageStatus>("/api/storage/status", signal),
   login: (email: string, password: string) => send<AuthSession>("/api/auth/login", "POST", { email, password }),
   me: () => get<{ user: AuthUser }>("/api/auth/me"),
   logout: () => send<{ ok: boolean }>("/api/auth/logout", "POST"),
@@ -2984,6 +3026,7 @@ export const api = {
   deleteSeedRadiusTariff: (id: number) => send<SeedRadiusTariffsData>(`/api/seed-radius-tariffs/${id}`, "DELETE"),
   harvestAreas: (safraId?: number) =>
     get<HarvestAreasData>(safraId ? `/api/areas?safraId=${safraId}` : "/api/areas"),
+  periodosParametrosTecnicos: () => get<{ periodos: { safraId: number; safraLabel: string; anomesInicio: string; anomesFim: string }[] }>("/api/parametros-tecnicos/periodos"),
   parametrosTecnicos: (safraId: number | undefined, anomesInicio: string, anomesFim: string) => {
     const q = new URLSearchParams({ anomesInicio, anomesFim });
     if (safraId != null) q.set("safraId", String(safraId));
@@ -3012,6 +3055,7 @@ export const api = {
   updateHarvestArea: (id: number, body: Partial<{ description: string; area: number }>) =>
     send<HarvestAreasData>(`/api/areas/${id}`, "PATCH", body),
   deleteHarvestArea: (id: number) => send<HarvestAreasData>(`/api/areas/${id}`, "DELETE"),
+  arrendamentoPorSafra: () => get<{ dados: ArrendamentoSafra[] }>("/api/custo/arrendamento-por-safra"),
   safras: () => get<SafrasData>("/api/safras"),
   addSafra: (code: string, label?: string, copyFrom = true) =>
     send<SafrasData>("/api/safras", "POST", { code, label, copyFrom }),

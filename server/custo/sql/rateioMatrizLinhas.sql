@@ -236,6 +236,9 @@ rateio AS (
         dest_obj
 )
 SELECT
+    r.origem AS origem_objeto,
+    orig.descricao AS origem_descricao,
+    r.dest_obj AS destino_objeto,
     dest.processo AS dest_processo,
     dest.subprocesso AS dest_subprocesso,
     dest.descricao AS dest_descricao,
@@ -252,6 +255,7 @@ SELECT
     SUM(r.valor_rateado) AS valor
 FROM rateio r
 JOIN custo.objetocusto dest ON dest.cod_objetocusto = r.dest_obj
+LEFT JOIN custo.objetocusto orig ON orig.cod_objetocusto = r.origem
 LEFT JOIN custo.empenho emp ON emp.cod_empenho = r.cod_empenho
 LEFT JOIN custo.grupoempenho ge ON ge.cod_grupoempenho = r.cod_grupoempenho
 LEFT JOIN custo.item_custo ic
@@ -260,6 +264,9 @@ LEFT JOIN custo.item_custo ic
 LEFT JOIN custo.grupo_item_custo gic
     ON gic.cod_grupo_item_custo = ic.cod_grupo_item_custo
 GROUP BY
+    r.origem,
+    orig.descricao,
+    r.dest_obj,
     dest.processo,
     dest.subprocesso,
     dest.descricao,

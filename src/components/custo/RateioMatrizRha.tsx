@@ -1,8 +1,10 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { api, type CustoMatrizSubprocessoData } from "../../api";
 import { formatBRL } from "../../lib/format";
 import { useApp } from "../../store";
 import { PrintButton } from "../PrintButton";
+import { composicaoPorColuna } from "../../lib/rateio-origens";
+import { ArrendamentoSafraChart } from "./ArrendamentoSafraChart";
 
 const COL_FILL: Record<string, { bg: string; color: string }> = {
   preparo: { bg: "#e3e9ef", color: "#1a2744" },
@@ -460,10 +462,81 @@ export function EstagiosProducao({
 }
 
 export function RateioMatrizRha({ data, printMeta }: Props) {
-  const [modo, setModo] = useState<ModoExibicao>("rha");
+  const adicionais = new Set(["colheita", "irrigacao", "administrativo", "arrendamento"]);
+  const separar = (outros: boolean): CustoMatrizSubprocessoData => {
+    const colunas = data.colunas.filter((coluna) => adicionais.has(coluna.key) === outros);
+    const chaves = new Set(colunas.map((coluna) => coluna.key));
+    const origens = data.origens?.filter((origem) => chaves.has(origem.coluna) || (chaves.has("formacao") && origem.coluna === "colheita_mudas"));
+    return {
+      ...data,
+      colunas,
+      origens,
+      linhas: data.linhas.filter((linha) => linha.tipo === "total"
+        || colunas.some((coluna) => Math.abs(linha.celulas[coluna.key]?.valor ?? 0) > 0.0001)
+        || origens?.some((origem) => linha.tipo === "subtotal" ? origem.secao === linha.secao : origem.linhaChave === linha.chave)),
+    };
+  };
+  const principal = separar(false);
+  const outros = separar(true);
+  return <>
+    <RateioTabela data={principal} printMeta={printMeta} titulo="Rateio por subprocesso (Cana)" />
+    {outros.colunas.length ? <DemaisCustosEstagio data={outros} /> : null}
+    <ArrendamentoSafraChart />
+  </>;
+}
+
+function DemaisCustosEstagio({ data }: { data: CustoMatrizSubprocessoData }) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  useEffect(() => setAberto(null), [data]);
+  const total = data.linhas.find((linha) => linha.tipo === "total");
+  const totalPeriodo = data.resumo.totalPool;
+  const toneladas = data.toneladas ?? data.estagios?.toneladas ?? 0;
+  return <section className="panel">
+    <h3>Demais custos de Estágio de produção</h3>
+    <div className="table-wrap">
+      <table className="data estagio-producao-table">
+        <thead><tr><th>Estágio de produção</th><th className="num">Custo total (R$)</th><th className="num">R$/ha</th><th className="num">R$/ton</th><th className="num">%</th></tr></thead>
+        <tbody>{data.colunas.map((coluna) => {
+          const composicao = aberto === coluna.key && total ? composicaoPorColuna({ ...data, colunas: [coluna], origens: data.origens?.filter((origem) => origem.coluna === coluna.key) }, total) : [];
+          return <Fragment key={coluna.key}>
+            <tr>
+              <td><strong>{coluna.label}</strong>
+                {data.origens?.some((origem) => origem.coluna === coluna.key) ? <button
+                  type="button" className="matriz-origem-abrir no-print"
+                  aria-expanded={aberto === coluna.key}
+                  onClick={() => setAberto((atual) => atual === coluna.key ? null : coluna.key)}
+                >{aberto === coluna.key ? "Ocultar composição" : "Ver composição"}</button> : null}
+              </td>
+              <td className="num">{formatBRL(coluna.total)}</td>
+              <td className="num">{fmtRha(coluna.rHaTotal)}</td>
+              <td className="num">{fmtRha(toneladas > 0 ? coluna.total / toneladas : null)}</td>
+              <td className="num">{fmtPct(totalPeriodo > 0 ? coluna.total / totalPeriodo * 100 : null)}</td>
+            </tr>
+            {composicao.map((item) => {
+              const cell = item.celulas[coluna.key];
+              return <tr key={item.chave} className="matriz-composicao-item">
+                <td style={{ paddingLeft: 28 }}>{item.nome}</td>
+                <td className="num">{formatBRL(cell.valor)}</td>
+                <td className="num">{fmtRha(cell.rHa)}</td>
+                <td className="num">{fmtRha(toneladas > 0 ? cell.valor / toneladas : null)}</td>
+                <td className="num">{fmtPct(totalPeriodo > 0 ? cell.valor / totalPeriodo * 100 : null)}</td>
+              </tr>;
+            })}
+          </Fragment>;
+        })}</tbody>
+      </table>
+    </div>
+  </section>;
+}
+
+function RateioTabela({ data, printMeta, titulo }: Props & { titulo: string }) {
+  const detalheId = useId();
+  const modo: ModoExibicao = "rha";
+  const [detalhe, setDetalhe] = useState<{ linha: string; coluna: string } | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "ok" | "err">("idle");
-  const { colunas, linhas, hectareas, fontesUnidades, resumo } = data;
+  const { colunas, linhas, hectareas, fontesUnidades } = data;
   const modoLabel = modo === "valor" ? "R$" : "R$/ha";
+  useEffect(() => setDetalhe(null), [data]);
 
   const copyTable = async () => {
     try {
@@ -483,7 +556,7 @@ export function RateioMatrizRha({ data, printMeta }: Props) {
       <div className="matriz-rha-head">
         <div>
           <h3>
-            Rateio por subprocesso (Cana)
+            {titulo}
             <span className="panel-h3-actions">
               <button
                 type="button"
@@ -497,62 +570,7 @@ export function RateioMatrizRha({ data, printMeta }: Props) {
             </span>
           </h3>
           {printMeta ? <p className="print-only-meta">{printMeta}</p> : null}
-          <p className="lead" style={{ marginTop: 0 }}>
-            Colunas = subprocessos que receberam o rateio. <strong>Operação</strong> agrega três linhas:{" "}
-            <strong>Irrigação/Fertirrigação</strong> (proc 4), <strong>Máquina</strong> (equipamento,
-            transportes, manutenção, materiais/consumo, combustíveis, aluguéis operacionais) e{" "}
-            <strong>Mão de obra</strong> (grupos 10, 19 e 22). Insumos = empenhos do grupo 24. Em{" "}
-            <strong>R$/ha</strong>, preparo, plantio, tratos planta e formação usam a coluna Área de{" "}
-            <code>automotivo.itens_apontamento</code> (operação 41). Tratos soca usa a área de{" "}
-            <code>agricola.apontamentoitem</code> nas operações M13, M56, M80 e M342.{" "}
-            <strong>Formação</strong> = preparo + plantio + tratos planta + colheita de mudas (sem centro
-            próprio).
-          </p>
         </div>
-        <div className="kind-toggle matriz-rha-toggle no-print">
-          <button
-            type="button"
-            className={`btn ${modo === "valor" ? "primary" : ""}`}
-            onClick={() => setModo("valor")}
-          >
-            R$
-          </button>
-          <button
-            type="button"
-            className={`btn ${modo === "rha" ? "primary" : ""}`}
-            onClick={() => setModo("rha")}
-          >
-            R$/ha
-          </button>
-        </div>
-      </div>
-
-      <div className="matriz-rha-meta print-meta-inline">
-        {colunas.map((col) => {
-          const fonte = fontesUnidades?.[col.key];
-          const sheetLabel = fonte?.sheetTitle ?? fonte?.sheetName ?? col.sheetName ?? "—";
-          const formacaoHint =
-            col.key === "formacao"
-              ? " · soma preparo + plantio + tratos planta + colheita de mudas"
-              : col.key === "tratos_soca"
-                ? " · proc 2 + colheita proc 3 (cana soca)"
-                : "";
-          return (
-            <span key={col.key}>
-              <strong>{col.label}</strong> ({sheetLabel}): {fmtHa(col.hectareas)} ha
-              {formacaoHint}
-              {fonte && !fonte.configurado && col.key !== "formacao" ? " · sem fonte Un realizado" : null}
-            </span>
-          );
-        })}
-        <span>
-          <strong>Pool:</strong> {formatBRL(resumo?.totalPool ?? 0)}
-        </span>
-        {(resumo?.totalForaMatriz ?? 0) > 1 ? (
-          <span>
-            <strong>Fora das colunas:</strong> {formatBRL(resumo?.totalForaMatriz ?? 0)}
-          </span>
-        ) : null}
       </div>
 
       <div className="table-wrap matriz-rha-wrap">
@@ -585,6 +603,8 @@ export function RateioMatrizRha({ data, printMeta }: Props) {
           </thead>
           <tbody>
             {linhas.map((row) => {
+              const aberta = detalhe?.linha === row.chave;
+              const composicao = aberta ? composicaoPorColuna(data, row) : [];
               const isTotal = row.tipo === "total";
               const isSubtotal = row.tipo === "subtotal";
               const isIrrigacao = row.grupo === "irrigacao";
@@ -603,17 +623,35 @@ export function RateioMatrizRha({ data, printMeta }: Props) {
                       style={{ paddingLeft: 8 + (row.indent ?? 0) * 16 }}
                     >
                       {row.label}
+                      {data.origens?.length ? <button
+                        type="button"
+                        className="matriz-origem-abrir no-print"
+                        aria-expanded={aberta}
+                        onClick={() => setDetalhe((atual) => atual?.linha === row.chave ? null : { linha: row.chave, coluna: "todas" })}
+                      >{aberta ? "Ocultar composição" : "Ver composição"}</button> : null}
                     </td>
                     {colunas.flatMap((col) => {
                       const cell = row.celulas[col.key];
-                      const hasValue = isTotal || (cell?.valor ?? 0) > 0.005;
+                      const hasValue = isTotal || Math.abs(cell?.valor ?? 0) > 0.005;
                       const mainValue =
                         modo === "valor"
                           ? formatBRL(cell?.valor ?? 0)
                           : fmtRha(cell?.rHa);
                       return [
                         <td key={`${row.chave}-${col.key}-v`} className={`num ${COL_CLASS[col.key] ?? ""}`}>
-                          {hasValue ? mainValue : "—"}
+                          {hasValue && data.origens?.length ? (
+                            <button
+                              type="button"
+                              className="matriz-origem-link"
+                              aria-label={`Ver origem de ${row.label} em ${col.label}`}
+                              aria-expanded={aberta}
+                              aria-controls={aberta ? detalheId : undefined}
+                              title="Ver composição do custo"
+                              onClick={() => setDetalhe((atual) => atual?.linha === row.chave ? null : { linha: row.chave, coluna: col.key })}
+                            >
+                              {mainValue} <span aria-hidden="true">⌕</span>
+                            </button>
+                          ) : hasValue ? mainValue : "—"}
                         </td>,
                         <td key={`${row.chave}-${col.key}-p`} className={`num ${COL_CLASS[col.key] ?? ""}`}>
                           {hasValue ? fmtPct(cell?.pct) : "—"}
@@ -621,6 +659,23 @@ export function RateioMatrizRha({ data, printMeta }: Props) {
                       ];
                     })}
                   </tr>
+                  {aberta ? composicao.map((item) => (
+                    <tr key={item.chave} className="matriz-composicao-item" id={composicao[0] === item ? detalheId : undefined}>
+                      <td className="matriz-row-label" style={{ paddingLeft: 24 + (row.indent ?? 0) * 16 }}>{item.nome}</td>
+                      {colunas.flatMap((col) => {
+                        const cell = item.celulas[col.key];
+                        const temValor = Math.abs(cell?.valor ?? 0) > 0.005;
+                        return [
+                          <td key={`${col.key}-v`} className={`num ${COL_CLASS[col.key] ?? ""}`} title={formatBRL(cell?.valor ?? 0)}>
+                            {temValor ? (modo === "valor" ? formatBRL(cell.valor) : fmtRha(cell.rHa)) : "—"}
+                          </td>,
+                          <td key={`${col.key}-p`} className={`num ${COL_CLASS[col.key] ?? ""}`}>
+                            {temValor ? fmtPct(cell.pct) : "—"}
+                          </td>,
+                        ];
+                      })}
+                    </tr>
+                  )) : null}
                 </Fragment>
               );
             })}

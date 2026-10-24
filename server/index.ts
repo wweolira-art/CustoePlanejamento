@@ -68,7 +68,7 @@ import {
 } from "./harvest-areas.js";
 import { lerCustoColheita, salvarCustoColheitaLocal } from "./custo-colheita.js";
 import { lerFichaEstagio, mesesDoPeriodo } from "./ficha-estagio.js";
-import { extrairParametrosTecnicos, lerParametrosTecnicos, salvarParametrosTecnicos } from "./parametros-tecnicos.js";
+import { extrairParametrosTecnicos, lerParametrosTecnicos, salvarParametrosTecnicos, listarPeriodosParametrosTecnicos } from "./parametros-tecnicos.js";
 import { entradaCanaConfig, runEntradaCanaImport, type EntradaCanaFileInput, type EntradaCanaImportOptions } from "./entrada-cana.js";
 import { loadEnvFile } from "./oracle.js";
 import { registerColheitaRoutes } from "./colheita-routes.js";
@@ -85,6 +85,7 @@ import {
 import { registerUsersAdminRoutes } from "./users-admin.js";
 import { registerAccessControl } from "./access-control.js";
 import { BudgetCloudController, budgetBootState, budgetCloudEnabled, captureBudgetState } from "./budget-cloud.js";
+import { budgetStorageStatus } from "./budget-storage-status.js";
 import {
   createExternalSiteGroup,
   createExternalSiteItem,
@@ -916,6 +917,13 @@ registerAccessControl(app);
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, budgetStorage: budgetCloudEnabled() ? "supabase" : "sqlite" }));
 
+app.get("/api/storage/status", async (req, res) => {
+  const user = verifySessionToken(readBearerToken(req.headers.authorization));
+  if (!user) return res.status(401).json({ error: "Sessão expirada ou inválida." });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(await budgetStorageStatus(budgetCloudEnabled()));
+});
+
 app.post("/api/auth/login", async (req, res) => {
   try {
     const body = (req.body ?? {}) as { email?: string; password?: string };
@@ -1685,6 +1693,11 @@ app.get("/api/ficha-estagio", (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Não foi possível ler a ficha." });
   }
+});
+
+app.get("/api/parametros-tecnicos/periodos", (_req, res) => {
+  try { res.json({ periodos: listarPeriodosParametrosTecnicos() }); }
+  catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : "Não foi possível listar os períodos." }); }
 });
 
 app.get("/api/parametros-tecnicos", (req, res) => {

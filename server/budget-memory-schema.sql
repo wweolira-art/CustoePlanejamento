@@ -35,7 +35,7 @@ CREATE TABLE lines (
   description TEXT NOT NULL,
   is_group INTEGER NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0
-, activity_id INTEGER REFERENCES activities(id), material_id INTEGER REFERENCES materials(id), cost_object_id INTEGER REFERENCES cost_objects(id), ref_kind TEXT, parent_id INTEGER REFERENCES lines(id), use_activity_auto INTEGER NOT NULL DEFAULT 1, start_month INTEGER, end_month INTEGER, calc_premise TEXT, calc_dose REAL, calc_price REAL, calc_exclude_weekdays TEXT, calc_area_premise TEXT, calc_area_pct REAL, calc_area_ha REAL, calc_months TEXT, calc_applications REAL, calc_direct INTEGER NOT NULL DEFAULT 0, center_sheet_id INTEGER REFERENCES sheets(id), calc_kind TEXT, calc_trips REAL, calc_machine_qty REAL, calc_plans TEXT, calc_reduce_pct REAL, calc_hour_interval REAL, funcionario_api_config TEXT, obc_split_group TEXT);
+, activity_id INTEGER REFERENCES activities(id), material_id INTEGER REFERENCES materials(id), cost_object_id INTEGER REFERENCES cost_objects(id), ref_kind TEXT, parent_id INTEGER REFERENCES lines(id), use_activity_auto INTEGER NOT NULL DEFAULT 1, start_month INTEGER, end_month INTEGER, calc_premise TEXT, calc_dose REAL, calc_price REAL, calc_exclude_weekdays TEXT, calc_area_premise TEXT, calc_area_pct REAL, calc_area_ha REAL, calc_months TEXT, calc_applications REAL, calc_direct INTEGER NOT NULL DEFAULT 0, center_sheet_id INTEGER REFERENCES sheets(id), calc_kind TEXT, calc_trips REAL, calc_machine_qty REAL, calc_plans TEXT, calc_reduce_pct REAL, calc_hour_interval REAL, funcionario_api_config TEXT, obc_split_group TEXT, observation TEXT, empenho_override TEXT);
 
 CREATE TABLE line_months (
   line_id INTEGER NOT NULL REFERENCES lines(id) ON DELETE CASCADE,

@@ -1,3 +1,4 @@
+import { PeriodosEstagio } from "./PeriodosEstagio";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type CustoMatrizSubprocessoData, type ParametrosTecnicos } from "../../api";
 import { ConsultaProgressBar } from "../ConsultaProgressBar";
@@ -204,6 +205,9 @@ function ParametrosTecnicosCard({
 }
 
 export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId }: Props) {
+  const [safraConfigurada, setSafraConfigurada] = useState(safraId);
+  const [labelConfigurada, setLabelConfigurada] = useState(safraLabel);
+  const [revisaoPeriodos, setRevisaoPeriodos] = useState(0);
   const [inicio, setInicio] = useState(() => anomesToInput(anomesFrom));
   const [fim, setFim] = useState(() => anomesToInput(anomesTo));
   const [periodo, setPeriodo] = useState<{ inicio: string; fim: string } | null>(null);
@@ -234,7 +238,7 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
           anomesFim,
           somenteEstagios: 1,
         };
-        if (safraId != null) params.safraId = safraId;
+        if (safraConfigurada != null) params.safraId = safraConfigurada;
         const data = await api.custoMatrizSubprocesso(params);
         setMatriz(data);
         setPeriodo({ inicio: anomesInicio, fim: anomesFim });
@@ -245,16 +249,18 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
         setLoading(false);
       }
     },
-    [safraId],
+    [safraConfigurada],
   );
 
   useEffect(() => {
+    setSafraConfigurada(safraId);
+    setLabelConfigurada(safraLabel);
     setInicio(anomesToInput(anomesFrom));
     setFim(anomesToInput(anomesTo));
     setMatriz(null);
     setPeriodo(null);
     setErr(null);
-  }, [anomesFrom, anomesTo, safraId]);
+  }, [anomesFrom, anomesTo, safraId, safraLabel]);
 
   useEffect(() => {
     const anomesInicio = inicio.trim();
@@ -265,7 +271,7 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
     let cancelled = false;
     setParamErr(null);
     api
-      .parametrosTecnicos(safraId, anomesInicio, anomesFim)
+      .parametrosTecnicos(safraConfigurada, anomesInicio, anomesFim)
       .then((row) => {
         if (cancelled || seq !== leituraSeq.current) return;
         if (!row.armazenado) {
@@ -287,7 +293,7 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
     return () => {
       cancelled = true;
     };
-  }, [safraId, inicio, fim]);
+  }, [safraConfigurada, inicio, fim]);
 
   const aplicarExtraido = (row: ParametrosTecnicos, proximaOrigem: Origem) => {
     setCampos(camposDe(row));
@@ -307,7 +313,7 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
     setParamErr(null);
     try {
       const row = await api.extrairParametrosTecnicos({
-        safraId,
+        safraId: safraConfigurada,
         anomesInicio,
         anomesFim,
       });
@@ -346,12 +352,13 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
     setParamErr(null);
     try {
       const row = await api.salvarParametrosTecnicos({
-        safraId,
+        safraId: safraConfigurada,
         ...numeros,
         anomesInicio,
         anomesFim,
       });
       aplicarExtraido(row, "armazenado");
+      setRevisaoPeriodos((value) => value + 1);
     } catch (e) {
       setParamErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -393,9 +400,20 @@ export function EstagioProducaoPanel({ anomesFrom, anomesTo, safraLabel, safraId
   return (
     <>
       <p className="lead">
-        Estágio de produção e parâmetros técnicos da {safraLabel}
+        Estágio de produção e parâmetros técnicos da {labelConfigurada}
         {periodo ? `, período ${periodo.inicio} a ${periodo.fim}` : ""}.
       </p>
+      <PeriodosEstagio safraId={safraConfigurada} revisao={revisaoPeriodos} disabled={loading || extraindo || armazenando} onSelecionar={(escolhido) => {
+        if (escolhido.safraId === safraConfigurada && escolhido.anomesInicio === inicio && escolhido.anomesFim === fim) return;
+        ++leituraSeq.current;
+        setSafraConfigurada(escolhido.safraId);
+        setLabelConfigurada(escolhido.safraLabel);
+        setInicio(escolhido.anomesInicio);
+        setFim(escolhido.anomesFim);
+        setMatriz(null); setPeriodo(null); setCampos(CAMPOS_VAZIOS); setOrigem("vazio");
+        setPeriodoExtracao({ inicio: escolhido.anomesInicio, fim: escolhido.anomesFim });
+        setErr(null); setParamErr(null);
+      }} />
       <section className="panel no-print">
         <h3>Filtros</h3>
         <form

@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { loadEnvFile } from "./oracle.js";
 import { getUserPermissions } from "./user-permissions.js";
+import { verifyPassword } from "./password-verification.js";
 
 export type AuthUser = {
   id: number;
@@ -208,8 +209,7 @@ export async function verifyStoredPassword(email: string, password: string) {
   const user = await fetchUsuarioByEmail(email.trim());
   if (!user) return { ok: false as const, reason: "Usuário não encontrado." };
   if (!user.ativo || user.ativo === 0) return { ok: false as const, reason: "Usuário inativo." };
-  const hash = hashPassword(password);
-  const ok = safeEqualText(hash, user.senha_hash);
+  const ok = await verifyPassword(password, user.senha_hash);
   return { ok, reason: ok ? null : "Senha incorreta." };
 }
 
@@ -294,8 +294,7 @@ export async function loginWithCredentials(email: string, password: string): Pro
     throw new Error("Usuário inativo. Peça liberação ao administrador.");
   }
 
-  const hash = hashPassword(trimmedPassword);
-  if (!safeEqualText(hash, user.senha_hash)) {
+  if (!(await verifyPassword(trimmedPassword, user.senha_hash))) {
     throw new Error("E-mail ou senha incorretos.");
   }
 

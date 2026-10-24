@@ -22,6 +22,7 @@ import { EditAccessProvider, ReadOnlyBanner } from "./lib/editAccess";
 import { APP_PRODUCT_NAME } from "./lib/appFlavor";
 import { canEditPage } from "./lib/permissions";
 import { useApp, type Page } from "./store";
+import { BudgetStorageStatus } from "./components/BudgetStorageStatus";
 
 class ScreenError extends Component<{ children: ReactNode }, { message: string | null }> {
   state = { message: null as string | null };
@@ -170,7 +171,7 @@ export function App() {
       <div className="boot">
         <div>
           <h1>Abrindo o orçamento…</h1>
-          <p>Lendo o SQLite e as premissas da safra.</p>
+          <p>Lendo os dados e as premissas da safra.</p>
         </div>
       </div>
     );
@@ -201,7 +202,7 @@ export function App() {
               : page.kind === "users"
                 ? "Crie usuários, verifique senhas e defina quais abas cada pessoa pode acessar."
                 : page.kind === "manage"
-                  ? "Ocultar ou excluir abas gravadas no SQLite."
+                  ? "Ocultar ou excluir abas do orçamento."
                   : page.kind === "activities"
                     ? "Cadastro de subempenhos com código, descrição e empenho."
                     : page.kind === "empenhos"
@@ -239,6 +240,7 @@ export function App() {
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
           <div className="topbar-actions">
+            {activeCostView || (page.kind === "siteGroup" && siteGroup?.nativeKey === "cost-planning") ? <BudgetStorageStatus /> : null}
             {current?.kind === "cost_center" && canEditCurrent ? (
               <label className="check-label verified-toggle">
                 <span className="check-row">
