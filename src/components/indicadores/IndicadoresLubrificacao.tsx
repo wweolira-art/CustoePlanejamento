@@ -104,7 +104,7 @@ function EstimadoRealizadoChart({
       <div className="lub-chart-head">
         <div>
           <h4>Estimado x Realizado</h4>
-          {allMonths ? <small className="lub-chart-sub">Estimado e Realizado por Mês</small> : null}
+          {allMonths ? <small className="lub-chart-sub">Dias estimados e realizados por mês</small> : null}
         </div>
         <div className="lub-chart-filters">
           <label>
@@ -133,10 +133,10 @@ function EstimadoRealizadoChart({
       </div>
       <div className="lub-legend">
         <span>
-          <i className="estimado" /> Estimado
+          <i className="estimado" /> Estimado (dias)
         </span>
         <span>
-          <i className="realizado" /> Realizado
+          <i className="realizado" /> Realizado (dias)
         </span>
       </div>
       {visibleRows.length ? (
@@ -145,7 +145,7 @@ function EstimadoRealizadoChart({
             <div
               className="lub-bar-col"
               key={row.mes}
-              title={`${row.label}: estimado ${fmt(row.estimado, 1)}, realizado ${fmt(row.realizado, 0)}`}
+              title={`${row.label}: estimado ${fmt(row.estimado, 1)} dias, realizado ${fmt(row.realizado, 0)} dias em ${fmt(row.lancamentos, 0)} lançamentos`}
             >
               <div className="lub-bar-group">
                 <div className="lub-bar estimado" style={{ height: `${Math.max(2, (row.estimado / max) * 100)}%` }}>
@@ -166,16 +166,17 @@ function EstimadoRealizadoChart({
   );
 }
 
-function KpiCards({ estimado, realizado }: { estimado: number; realizado: number }) {
+function KpiCards({ estimado, realizado, lancamentos }: { estimado: number; realizado: number; lancamentos: number }) {
   return (
     <div className="lub-kpi-cards">
       <div className="lub-kpi-card">
         <strong>{fmt(estimado, 0)}</strong>
-        <span>Quantidade Estimada</span>
+        <span>Dias estimados</span>
       </div>
       <div className="lub-kpi-card">
         <strong>{fmt(realizado, 0)}</strong>
-        <span>Quantidade Realizada</span>
+        <span>Dias realizados</span>
+        <small>{fmt(lancamentos, 0)} lançamentos realizados</small>
       </div>
     </div>
   );
@@ -232,15 +233,15 @@ function TipoEquipamentoChart({ rows }: { rows: LubrificacaoPorTipo[] }) {
       </div>
       <div className="lub-legend">
         <span>
-          <i className="estimado" /> qtdePrevista
+          <i className="estimado" /> dias estimados
         </span>
         <span>
-          <i className="realizado" /> qtdeLubrificacao
+          <i className="realizado" /> dias com lubrificação
         </span>
       </div>
       <div className="lub-tipo-bars">
         {rows.map((row) => (
-          <div className="lub-tipo-row" key={row.tipo} title={`${row.tipo}: estimado ${fmt(row.estimado, 1)}, realizado ${fmt(row.realizado, 0)}`}>
+          <div className="lub-tipo-row" key={row.tipo} title={`${row.tipo}: estimado ${fmt(row.estimado, 1)} dias, realizado ${fmt(row.realizado, 0)} dias`}>
             <span>{row.tipo}</span>
             <div>
               <div className="lub-tipo-track">
@@ -276,7 +277,11 @@ function EficienciaDashboard({
         <section className="lub-panel lub-efi-donut-panel">
           <DonutChart value={resumo.eficiencia} />
         </section>
-        <KpiCards estimado={resumo.quantidadeEstimada} realizado={resumo.quantidadeRealizada} />
+        <KpiCards
+          estimado={resumo.quantidadeEstimada}
+          realizado={resumo.quantidadeRealizada}
+          lancamentos={resumo.quantidadeLancamentos}
+        />
         <CalendarioLubrificacao ano={ano} mes={mesCalendario} dias={resumo.calendario} />
       </div>
       <div className="lub-efi-bottom">
@@ -341,6 +346,7 @@ export function IndicadoresLubrificacao() {
   const resumoFrota = data?.resumoFrota ?? {
     eficiencia: null,
     quantidadeEstimada: 0,
+    quantidadeLancamentos: 0,
     quantidadeRealizada: 0,
     mensal: [],
     porTipo: [],
