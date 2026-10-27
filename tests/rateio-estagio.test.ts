@@ -13,7 +13,49 @@ const { montarMatriz, montarSomenteEstagios, unidadesPorColuna, consultarArrenda
 const { db } = await import("../server/db.js");
 const { salvarParametrosTecnicos, lerParametrosTecnicos, listarPeriodosParametrosTecnicos } = await import("../server/parametros-tecnicos.js");
 const { ensureSafras } = await import("../server/safras.js");
+const { storeCalcPlans, parseCalcPlans, computeActivityPlanMonths, computeMaterialAutoMonths, gateMonthsBySelection, applyAutoCalcFull } = await import("../server/auto-calc.js");
 after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+
+test("unidade da quantidade permanece salva com preço e meses, inclusive em cálculos antigos", () => {
+  for (const quantityUnit of ["ha", "t", "kg", "un"]) {
+    const serializado = storeCalcPlans([{ mode: "fixed", dose: 12.5, price: 80, months: [0, 3, 7], quantityUnit }]);
+    const [plano] = parseCalcPlans(serializado);
+    assert.equal(plano.quantityUnit, quantityUnit);
+    assert.equal(plano.dose, 12.5);
+    assert.equal(plano.price, 80);
+    assert.deepEqual(plano.months, [0, 3, 7]);
+  }
+  const [legado] = parseCalcPlans(storeCalcPlans([{ mode: "fixed", dose: 2, price: 100, months: null }]));
+  assert.equal(legado.quantityUnit, "un");
+  assert.equal(legado.dose, 2);
+  assert.equal(legado.price, 100);
+  const [invalido] = parseCalcPlans([{ mode: "fixed", quantityUnit: "desconhecida", dose: 1, price: 50 }]);
+  assert.equal(invalido.quantityUnit, "un");
+});
+
+test("aplicações opcionais multiplicam quantidade e preço somente nos meses selecionados", () => {
+  const [plano] = parseCalcPlans(storeCalcPlans([{ mode: 'fixed', dose: 3, price: 10, applications: 2, quantityUnit: 'kg', months: [0, 2] }]));
+  assert.equal(plano.applications, 2);
+  assert.equal(plano.quantityUnit, 'kg');
+  const valores = computeActivityPlanMonths(plano, {}, 2026)!;
+  assert.deepEqual(gateMonthsBySelection(valores, plano.months), [60, 0, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const [semAplicacoes] = parseCalcPlans(storeCalcPlans([{ mode: 'fixed', dose: 3, price: 10, quantityUnit: 'kg', months: [0, 2] }]));
+  assert.equal(semAplicacoes.applications, undefined);
+  assert.deepEqual(gateMonthsBySelection(computeActivityPlanMonths(semAplicacoes, {}, 2026)!, semAplicacoes.months), [30, 0, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test("recalcular sem repartir equipamentos não depende de conexão Oracle", { timeout: 2000 }, async () => {
+  ensureSafras();
+  await applyAutoCalcFull(undefined, { syncEquipmentObc: false, strictObcSplit: true });
+});
+
+test("material por quantidade calcula sem área, dias ou premissa do pai", () => {
+  const linha = { calc_kind: 'quantity', calc_dose: 20, calc_price: 5.5, calc_applications: 2,
+    calc_months: '[0,1,2]', calc_area_ha: 99999, calc_area_premise: 'plantio_total' };
+  assert.deepEqual(computeMaterialAutoMonths(null, linha, 2026), [220, 220, 220, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(computeMaterialAutoMonths(null, { ...linha, calc_applications: 1 }, 2026), [110, 110, 110, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.equal(computeMaterialAutoMonths(null, { ...linha, calc_dose: 0 }, 2026), null);
+});
 
 const ha = { preparo: 10, plantio: 10, tratos_planta: 10, formacao: 10, tratos_soca: 20, irrigacao: 5 };
 function linha(destProcesso: number, destSubprocesso: number, valor: number, extra = {}) {

@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
+import { atividadeSubstituidaPorMateriaisE } from "../lib/import-materials";
+import { QUANTITY_UNITS, quantityUnit, type QuantityUnit } from "../../shared/quantity-unit";
+import { atividadeDaImportacao, empenhoDaImportacao } from "../lib/import-empenho";
 import { api, type Activity, type ApontamentoEquipmentData, type ApontamentoEquipmentItem, type ApontamentoEquipmentRate, type CalcRule, type CatalogCategory, type CostObject, type CostObjectHourCost, type CostObjectHourCostData, type DashboardData, type Empenho, type EquipmentCatalogItem, type EquipmentHourCost, type EquipmentHourCostData, type LineItem, type Material, type MaterialLastPrice, type SheetDetail, type SheetInfo, type ValueDistribution } from "../api";
 import { formatBRL, formatQty, parseMoneyInput } from "../lib/format";
 import { useApp } from "../store";
@@ -278,16 +281,15 @@ function isMaintenanceImportCategory(name: string | null | undefined) {
 }
 
 function activityImportCode(activities: Activity[], line: LineItem) {
-  const code = line.empenho_override ?? activities.find((activity) => activity.id === line.activity_id)?.empenho;
-  return numberOrTextCode(code);
+  return numberOrTextCode(empenhoDaImportacao(activities, line));
 }
 
 function subempenhoImportCode(activities: Activity[], line: LineItem) {
   const product = String(line.product_code ?? "").trim();
   if (line.item_type === "E" && product) return `E${product}`;
 
-  const activityCode = activities.find((activity) => activity.id === line.activity_id)?.code?.trim();
-  if (activityCode) return `G${activityCode}`;
+  const activityCode = atividadeDaImportacao(activities, line)?.code?.trim();
+  if (activityCode) return `G${activityCode.replace(/^G(?=\d)/i, "")}`;
 
   if (!product) return "";
   const type = line.item_type === "E" || line.item_type === "G" ? line.item_type : "";
@@ -306,6 +308,7 @@ function lineCanExport(line: LineItem, parentIds: Set<number>) {
 
 function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: number[]) {
   const rows: Array<Record<string, string | number | null>> = [];
+  const atividadesComMateriais = atividadeSubstituidaPorMateriaisE(data.categories.flatMap((category) => category.lines), data.name);
   for (const category of data.categories) {
     if (isFuncionarioImportCategory(category.name)) continue;
     const parentIds = new Set(
@@ -315,9 +318,11 @@ function buildImportRows(data: SheetDetail, activities: Activity[], monthKeys: n
     );
     const maintenanceByObject = new Map<string, { source: LineItem; monthlyCents: number[] }>();
     for (const line of category.lines) {
+      if (atividadesComMateriais.has(line.id)) continue;
       if (!lineCanExport(line, parentIds)) continue;
       const isLinkedMaintenanceEquipment =
         isMaintenanceImportCategory(category.name) &&
+        !(line.ref_kind === "material" && line.item_type === "E") &&
         (line.item_type === "E" || line.ref_kind === "cost_object") &&
         line.activity_id != null &&
         activities.some((activity) => activity.id === line.activity_id);
@@ -486,11 +491,11 @@ function FixedMonthValueFields({
     <>
       <label>
         Quantidade
-        <small>Multiplica o valor fixo em cada mês escolhido.</small>
+        <small>Quantidade × preço unitário em cada mês escolhido, sem usar área ou dias.</small>
         <input value={qty} onChange={(e) => onQty(e.target.value)} placeholder="Ex.: 1" />
       </label>
       <label>
-        Valor fixo
+        Preço unitário (R$)
         <input value={value} onChange={(e) => onValue(e.target.value)} placeholder="Ex.: 1500" />
       </label>
       <label className="span-2">
@@ -864,6 +869,9 @@ function MaterialPremiseFields({
 }
 
 type ActivityCalcPlan = {
+  quantityUnit?: QuantityUnit;
+  useApplications?: boolean;
+  applications?: string;
   id: string;
   mode: "area" | "days" | "fixed";
   months: number[];
@@ -903,8 +911,9 @@ function newCalcPlanId() {
   return `p-${Date.now()}-${calcPlanSeq}`;
 }
 
-function emptyCalcPlan(mode: "area" | "days" | "fixed" = "area"): ActivityCalcPlan {
+function emptyCalcPlan(mode: "area" | "days" | "fixed" = "fixed"): ActivityCalcPlan {
   return {
+    quantityUnit: "un",
     id: newCalcPlanId(),
     mode,
     months: [...ALL_MONTHS],
@@ -952,7 +961,7 @@ function emptyEquipmentCalc(): ActivityCalcState {
     useActivityAuto: false,
     premise: "",
     areaPremise: "",
-    plans: [emptyCalcPlan("area")],
+    plans: [emptyCalcPlan("fixed")],
   };
 }
 
@@ -1470,6 +1479,9 @@ function parseStoredCalcPlans(raw: string | null | undefined): ActivityCalcPlan[
           areaPct,
           fixedValue: mode === "fixed" && Number(row.price) > 0 ? formatCalcInput(Number(row.price)) : "",
           fixedQty: mode === "fixed" && Number(row.dose) > 0 ? String(row.dose).replace(".", ",") : "1",
+          quantityUnit: quantityUnit(row.quantityUnit),
+          useApplications: mode === "fixed" && row.applications != null,
+          applications: row.applications != null && Number(row.applications) > 0 ? formatCalcInput(Number(row.applications)) : "1",
         },
       ];
     });
@@ -1481,6 +1493,8 @@ function parseStoredCalcPlans(raw: string | null | undefined): ActivityCalcPlan[
 function serializeCalcPlans(plans: ActivityCalcPlan[]) {
   return plans.map((plan) => ({
     mode: plan.mode,
+    ...(plan.mode === "fixed" ? { quantityUnit: quantityUnit(plan.quantityUnit) } : {}),
+    ...(plan.mode === "fixed" && plan.useApplications ? { applications: parseInputNum(plan.applications ?? "") } : {}),
     months: plan.months.length === 12 ? null : [...plan.months].sort((a, b) => a - b),
     dose:
       plan.mode === "fixed"
@@ -1500,8 +1514,9 @@ function validateActivityPlans(plans: ActivityCalcPlan[], useAuto: boolean, auto
     const n = i + 1;
     if (!plan.months.length) return `Escolha os meses do cálculo ${n}.`;
     if (plan.mode === "fixed") {
-      if (!(parseInputNum(plan.fixedValue) > 0)) return `Informe o valor fixo do cálculo ${n}.`;
+      if (!(parseInputNum(plan.fixedValue) > 0)) return `Informe o preço unitário do cálculo ${n}.`;
       if (!(quantityOrOne(plan.fixedQty) > 0)) return `Informe a quantidade do cálculo ${n}.`;
+      if (plan.useApplications && (!Number.isFinite(parseInputNum(plan.applications ?? "")) || !(parseInputNum(plan.applications ?? "") > 0))) return `Informe a quantidade de aplicações do cálculo ${n}.`;
     } else {
       if (plan.mode === "area") {
         if (!(parseInputNum(plan.dose) > 0)) return `Informe a quantidade por hectare do cálculo ${n}.`;
@@ -1518,13 +1533,13 @@ function validateActivityPlans(plans: ActivityCalcPlan[], useAuto: boolean, auto
 function planFormula(plan: ActivityCalcPlan, drivers: CalcDriver[], autoPremise?: string | null) {
   const monthBit = plan.months.length === 12 ? "em todos os meses" : `em ${distributionMonthsLabel(plan.months)}`;
   if (plan.mode === "fixed") {
-    const monthly = fixedMonthlyAmount(plan.fixedValue, plan.fixedQty);
-    if (!(monthly > 0) || !plan.months.length) return `Valor fixo ${monthBit}`;
+    const monthly = fixedMonthlyAmount(plan.fixedValue, plan.fixedQty) * (plan.useApplications ? parseInputNum(plan.applications ?? "") : 1);
+    if (!(monthly > 0) || !plan.months.length) return `Quantidade × preço ${monthBit}`;
     const factor = quantityOrOne(plan.fixedQty);
     const unit = parseInputNum(plan.fixedValue);
-    return factor !== 1 && unit > 0
-      ? `${String(plan.fixedQty).replace(".", ",")} × ${formatBRL(unit)} = ${formatBRL(monthly)} ${monthBit}`
-      : `${formatBRL(monthly)} ${monthBit}`;
+    const medida = quantityUnit(plan.quantityUnit);
+    const aplicacoes = plan.useApplications ? ` × ${plan.applications || "0"} aplicação(ões)` : "";
+    return `${String(factor).replace(".", ",")} ${medida} × ${formatBRL(unit)}/${medida}${aplicacoes} = ${formatBRL(monthly)} ${monthBit}`;
   }
   const areaName = premiseLabel(autoPremise, drivers) ?? "área da premissa do cálculo automático";
   if (plan.mode === "days") {
@@ -1627,7 +1642,7 @@ function calcPayload(state: ActivityCalcState, autoPremise?: string | null) {
     const byMonth = new Map<number, number>();
     for (const plan of plans) {
       if (plan.mode !== "fixed") continue;
-      const monthly = fixedMonthlyAmount(plan.fixedValue, plan.fixedQty);
+      const monthly = fixedMonthlyAmount(plan.fixedValue, plan.fixedQty) * (plan.useApplications ? parseInputNum(plan.applications ?? "") : 1);
       if (!(monthly > 0)) continue;
       for (const month of plan.months) byMonth.set(month, monthly);
     }
@@ -3036,14 +3051,8 @@ function ActivityPlanCard({
         ) : null}
       </div>
       <div className="kind-toggle" style={{ padding: 0 }}>
-        <button type="button" className={`btn ${plan.mode === "area" ? "primary" : ""}`} onClick={() => set({ mode: "area" })}>
-          Por área
-        </button>
-        <button type="button" className={`btn ${plan.mode === "days" ? "primary" : ""}`} onClick={() => set({ mode: "days" })}>
-          Por dia × preço
-        </button>
-        <button type="button" className={`btn ${plan.mode === "fixed" ? "primary" : ""}`} onClick={() => set({ mode: "fixed" })}>
-          Valor fixo por mês
+        <button type="button" className={`btn ${plan.mode === "fixed" ? "primary" : ""}`} onClick={() => set({ mode: "fixed", fixedQty: plan.mode !== "fixed" ? plan.dose || "1" : plan.fixedQty, fixedValue: plan.mode !== "fixed" ? plan.price || plan.fixedValue : plan.fixedValue })}>
+          Quantidade
         </button>
       </div>
       <div className="form-grid" style={{ padding: "8px 0 0" }}>
@@ -3051,13 +3060,30 @@ function ActivityPlanCard({
           <>
             <label>
               Quantidade
-              <small>Multiplica o valor fixo em cada mês escolhido.</small>
+              <small>Quantidade × preço unitário em cada mês escolhido, sem usar área ou dias.</small>
               <input value={plan.fixedQty} onChange={(e) => set({ fixedQty: e.target.value })} placeholder="Ex.: 1" />
             </label>
             <label>
-              Valor fixo
+              Unidade da quantidade
+              <select value={quantityUnit(plan.quantityUnit)} onChange={(e) => set({ quantityUnit: quantityUnit(e.target.value) })}>
+                {QUANTITY_UNITS.map((unidade) => <option key={unidade.value} value={unidade.value}>{unidade.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Preço por {quantityUnit(plan.quantityUnit)} (R$)
               <input value={plan.fixedValue} onChange={(e) => set({ fixedValue: e.target.value })} placeholder="Ex.: 1500" />
             </label>
+            <label className="span-2 check-label">
+              <span className="check-row">
+                <input type="checkbox" checked={Boolean(plan.useApplications)} onChange={(e) => set({ useApplications: e.target.checked, applications: plan.applications || "1" })} />
+                Definir quantidade de aplicações
+              </span>
+            </label>
+            {plan.useApplications ? <label>
+              Quantidade de aplicações
+              <small>Multiplica quantidade × preço em cada mês escolhido.</small>
+              <input value={plan.applications ?? "1"} onChange={(e) => set({ applications: e.target.value })} inputMode="decimal" placeholder="Ex.: 2" />
+            </label> : null}
           </>
         ) : (
           <>
@@ -3325,7 +3351,7 @@ function ActivityCalcForm({
     });
   const planList = (
     <>
-      {equipmentMode && !showAuto ? (
+      {equipmentMode && !showAuto && value.plans.some((plan) => plan.mode !== "fixed") ? (
         <div className="form-grid" style={{ padding: "8px 0 0" }}>
           <MaterialPremiseFields
             drivers={drivers}
@@ -3375,8 +3401,8 @@ function ActivityCalcForm({
               onClick={() =>
                 set({
                   useActivityAuto: false,
-                  mode: value.mode === "fixed" || value.fixedMonths.length ? "fixed" : value.mode,
-                  plans: value.plans.length ? value.plans : [emptyCalcPlan(value.mode === "fixed" ? "fixed" : value.mode)],
+                  mode: "fixed",
+                  plans: value.plans.length ? value.plans : [emptyCalcPlan("fixed")],
                 })
               }
             >
@@ -3401,7 +3427,7 @@ function ActivityCalcForm({
           <p className="lead" style={{ margin: "4px 0 0", padding: 0 }}>
             {equipmentMode ? "Como você quer calcular neste equipamento?" : "Como você quer calcular nesta atividade?"}
           </p>
-          <small>Use um cálculo por grupo de meses. Cada um pode ser por área, por dia ou valor fixo.</small>
+          <small>Informe a quantidade, a unidade e o preço para os meses escolhidos. Aplicações são opcionais.</small>
           {planList}
         </>
       ) : (
@@ -3415,7 +3441,7 @@ function ActivityCalcForm({
               className={`btn ${value.mode === "fixed" ? "primary" : ""}`}
               onClick={() => set({ useActivityAuto: false, mode: "fixed" })}
             >
-              Valor fixo por mês
+              Quantidade × preço
             </button>
           </div>
           {value.mode === "fixed" ? (
@@ -3801,8 +3827,8 @@ function EditMaterialCalc({
 }) {
   const hourCost = isHourCostLine(line);
   const initialArea = initialMaterialArea(line);
-  const [calcMode, setCalcMode] = useState<"qty" | "direct" | "trips" | "hours" | "liters" | "days">(
-    isTripsLine(line)
+  const [calcMode, setCalcMode] = useState<"qty" | "quantity" | "direct" | "trips" | "hours" | "liters" | "days">(
+    line.calc_kind === "quantity" ? "quantity" : isTripsLine(line)
       ? "trips"
       : hourCost
         ? "qty"
@@ -3816,6 +3842,9 @@ function EditMaterialCalc({
               ? "direct"
               : "qty",
   );
+  const pureQuantity = calcMode === "quantity";
+  const [materialUnit, setMaterialUnit] = useState(() => quantityUnit(parseStoredCalcPlans(line.calc_plans)[0]?.quantityUnit));
+  const [useQuantityApplications, setUseQuantityApplications] = useState((line.calc_applications ?? 1) !== 1);
   const [price, setPrice] = useState(line.calc_price != null ? String(line.calc_price).replace(".", ",") : "");
   const [qty, setQty] = useState(line.calc_dose != null ? String(line.calc_dose).replace(".", ",") : "");
   const [trips, setTrips] = useState(line.calc_trips != null ? String(line.calc_trips).replace(".", ",") : "");
@@ -4073,7 +4102,7 @@ function EditMaterialCalc({
       setSaveErr("Informe o preço do custo direto.");
       return;
     }
-    if (!showHourUi && !showLiterUi && !showDaysUi && !hourCost && !premise && !usesParentArea) {
+    if (!pureQuantity && !showHourUi && !showLiterUi && !showDaysUi && !hourCost && !premise && !usesParentArea) {
       setSaveErr("Selecione a premissa.");
       return;
     }
@@ -4122,7 +4151,7 @@ function EditMaterialCalc({
       );
       return;
     }
-    const area = hoursFromTons || direct || tripsMode || showDaysUi
+    const area = pureQuantity || hoursFromTons || direct || tripsMode || showDaysUi
       ? { calcAreaPct: tripsMode || showDaysUi ? null : 100, calcAreaHa: null as number | null }
       : materialAreaPayload(usesArea, areaMode, areaPct, areaHa);
     if ("error" in area) {
@@ -4133,7 +4162,7 @@ function EditMaterialCalc({
       setSaveErr("Escolha pelo menos um mês do cálculo automático.");
       return;
     }
-    const apps = hourCost || showHourUi || showLiterUi || showDaysUi || direct || tripsMode ? 1 : parseApplicationsInput(applications);
+    const apps = pureQuantity && !useQuantityApplications ? 1 : hourCost || showHourUi || showLiterUi || showDaysUi || direct || tripsMode ? 1 : parseApplicationsInput(applications);
     if (!direct && !hourCost && !showHourUi && !showLiterUi && !showDaysUi && !tripsMode && !(apps > 0)) {
       setSaveErr("Informe a quantidade de aplicações.");
       return;
@@ -4199,13 +4228,14 @@ function EditMaterialCalc({
               refKind: "material",
               calcDose: direct ? 1 : quantity,
               calcPrice: unitPrice,
-              calcAreaPremise: showHourUi || showLiterUi || showDaysUi ? null : premise || null,
+              calcAreaPremise: pureQuantity || showHourUi || showLiterUi || showDaysUi ? null : premise || null,
               calcAreaPct: area.calcAreaPct,
-              calcAreaHa: direct || tripsMode || showDaysUi ? null : area.calcAreaHa,
+              calcAreaHa: pureQuantity || direct || tripsMode || showDaysUi ? null : area.calcAreaHa,
               calcMonths: materialCalcMonths(monthScope, autoMonths),
               calcApplications: apps,
               calcDirect: direct,
-              calcKind: tripsMode
+              ...(pureQuantity ? { calcPlans: [{ mode: "fixed", dose: quantity, price: unitPrice, quantityUnit: materialUnit, ...(useQuantityApplications ? { applications: apps } : {}), months: materialCalcMonths(monthScope, autoMonths) }] } : {}),
+              calcKind: pureQuantity ? "quantity" : tripsMode
                 ? "trips"
                 : calcMode === "hours"
                   ? "hours"
@@ -4239,7 +4269,7 @@ function EditMaterialCalc({
       <div className={`modal ${hourCost || showHourUi || showLiterUi || showDaysUi ? "wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <h3>Como calcular {line.description}</h3>
         <p className="lead" style={{ margin: "0 0 8px" }}>
-          {hourCost || calcMode === "hours"
+          {pureQuantity ? "Quantidade × preço × aplicações opcionais nos meses escolhidos." : hourCost || calcMode === "hours"
             ? calcMode === "trips"
               ? "Tonelada × viagens × quantidade de máquina × preço × dias da premissa."
               : hoursFromTons && !hourCost
@@ -4269,9 +4299,6 @@ function EditMaterialCalc({
                     : `Custo/hora × quantidade/ha × área da atividade (${parentShape}).`}
             </small>
             <div className="kind-toggle" style={{ padding: "6px 0 0" }}>
-              <button type="button" className={`btn ${calcMode !== "trips" ? "primary" : ""}`} onClick={() => setCalcMode("qty")}>
-                Custo/hora
-              </button>
               <button type="button" className={`btn ${calcMode === "trips" ? "primary" : ""}`} onClick={() => setCalcMode("trips")}>
                 Viagens
               </button>
@@ -4281,7 +4308,7 @@ function EditMaterialCalc({
           <label className="span-2">
             Como calcular
             <small>
-              {calcMode === "direct"
+              {pureQuantity ? "Quantidade × preço nos meses escolhidos, sem área ou dias." : calcMode === "direct"
                 ? "Custo direto: premissa × preço."
                 : calcMode === "trips"
                   ? "Tonelada × viagens × quantidade de máquina × preço × dias da premissa."
@@ -4296,28 +4323,11 @@ function EditMaterialCalc({
                   : "Quantidade: premissa × quantidade × preço × aplicações."}
             </small>
             <div className="kind-toggle" style={{ padding: "6px 0 0" }}>
-              <button type="button" className={`btn ${calcMode === "qty" ? "primary" : ""}`} onClick={() => setCalcMode("qty")}>
-                Quantidade
-              </button>
-              <button type="button" className={`btn ${calcMode === "hours" ? "primary" : ""}`} onClick={() => setCalcMode("hours")}>
-                Custo/hora
-              </button>
-              <button type="button" className={`btn ${calcMode === "days" ? "primary" : ""}`} onClick={() => setCalcMode("days")}>
-                Horas/dia
-              </button>
-              <button type="button" className={`btn ${calcMode === "liters" ? "primary" : ""}`} onClick={() => setCalcMode("liters")}>
-                L/ha
-              </button>
-              <button type="button" className={`btn ${calcMode === "direct" ? "primary" : ""}`} onClick={() => setCalcMode("direct")}>
-                Custo direto
-              </button>
-              <button type="button" className={`btn ${calcMode === "trips" ? "primary" : ""}`} onClick={() => setCalcMode("trips")}>
-                Viagens
-              </button>
+              <button type="button" className={`btn ${pureQuantity ? "primary" : ""}`} onClick={() => setCalcMode("quantity")}>Quantidade</button>
             </div>
           </label>
           )}
-          {showDaysUi ? (
+          {pureQuantity ? <div className="formula-box">{qty || "0"} {materialUnit} × {price || "0"} R$/{materialUnit}{useQuantityApplications ? ` × ${applications || "1"} aplicação(ões)` : ""} = {formatBRL(totalValue * (useQuantityApplications ? parseApplicationsInput(applications) : 1))} por mês escolhido</div> : showDaysUi ? (
             <>
             <label className="span-2">
               Equipamentos da atividade
@@ -4501,7 +4511,7 @@ function EditMaterialCalc({
               </div>
             </label>
           ) : null}
-          {showHourUi || showLiterUi || showDaysUi ? (
+          {pureQuantity ? null : showHourUi || showLiterUi || showDaysUi ? (
             showHourUi && !hoursFromTons && calcMode !== "trips" ? (
             <MaterialPremiseFields
               drivers={drivers}
@@ -4519,7 +4529,7 @@ function EditMaterialCalc({
             />
           )}
           <label>
-            {showHourUi || showDaysUi ? "Custo/hora" : showLiterUi ? "Preço/litro" : "Preço"}
+            {pureQuantity ? `Preço por ${materialUnit} (R$)` : showHourUi || showDaysUi ? "Custo/hora" : showLiterUi ? "Preço/litro" : "Preço"}
             <small>
               {showHourUi || showDaysUi
                 ? "R$ por hora. Cada safra tem o seu custo/hora."
@@ -4547,7 +4557,7 @@ function EditMaterialCalc({
                 <input value={machineQty} onChange={(e) => setMachineQty(e.target.value)} placeholder="Ex.: 10" />
               </label>
             </>
-          ) : hourCost || calcMode === "qty" || calcMode === "hours" || calcMode === "liters" || calcMode === "days" ? (
+          ) : pureQuantity || hourCost || calcMode === "qty" || calcMode === "hours" || calcMode === "liters" || calcMode === "days" ? (
             <>
               {hoursFromTons && !hourCost ? (
                 <label>
@@ -4564,7 +4574,7 @@ function EditMaterialCalc({
               <label>
                 {showDaysUi ? "Horas por dia" : "Quantidade"}
                 <small>
-                  {hoursFromTons
+                  {pureQuantity ? "Quantidade em cada mês escolhido" : hoursFromTons
                     ? "multiplica depois da divisão pelas horas"
                     : showDaysUi
                     ? "horas por dia"
@@ -4592,14 +4602,14 @@ function EditMaterialCalc({
                   <WeekdayPicks value={excludeWeekdays} onChange={setExcludeWeekdays} />
                 </label>
               ) : null}
-              {showHourUi || showLiterUi || showDaysUi ? null : (
+              {showHourUi || showLiterUi || showDaysUi || (pureQuantity && !useQuantityApplications) ? null : (
               <label>
                 Quantidade de aplicações
-                <small>Multiplica o cálculo: premissa × quantidade × preço × aplicações</small>
+                <small>Multiplica quantidade × preço em cada mês escolhido</small>
                 <input value={applications} onChange={(e) => setApplications(e.target.value)} placeholder="Ex.: 2" />
               </label>
               )}
-              {hoursFromTons || showDaysUi ? null : usesArea ? (
+              {pureQuantity || hoursFromTons || showDaysUi ? null : usesArea ? (
                 <MaterialAreaFields
                   mode={areaMode}
                   onMode={setAreaMode}
@@ -4611,6 +4621,10 @@ function EditMaterialCalc({
               ) : null}
             </>
           ) : null}
+          {pureQuantity ? <>
+            <label>Unidade da quantidade<select value={materialUnit} onChange={(e) => setMaterialUnit(quantityUnit(e.target.value))}>{QUANTITY_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}</select></label>
+            <label className="span-2 check-label"><span className="check-row"><input type="checkbox" checked={useQuantityApplications} onChange={(e) => setUseQuantityApplications(e.target.checked)} />Definir quantidade de aplicações</span></label>
+          </> : null}
           <AutoCalcMonthsFields
             scope={monthScope}
             months={autoMonths}
@@ -5943,7 +5957,7 @@ function AddActivity({
                   setFixedMonths((current) => (current.length ? current : [...ALL_MONTHS]));
                 }}
               >
-                Valor fixo por mês
+                Quantidade × preço
               </button>
               <button
                 type="button"
@@ -5967,7 +5981,7 @@ function AddActivity({
             className={`btn ${mode === "fixed" ? "primary" : ""}`}
             onClick={() => setMode("fixed")}
           >
-            Valor fixo por mês
+            Quantidade × preço
           </button>
           {arrendamentoSheet && !equipmentMode ? (
             <button
@@ -7615,7 +7629,7 @@ function AddEquipmentUnderCostObject({
               setFixedMonths((current) => (current.length ? current : [...ALL_MONTHS]));
             }}
           >
-            Valor fixo por mês
+            Quantidade × preço
           </button>
         </div>
         <div className="form-grid" style={{ gridTemplateColumns: "1fr", padding: "12px 0" }}>
@@ -8367,9 +8381,6 @@ function AddMaterial({
                     : "Custo/hora × quantidade/ha × hectares (ou toneladas) da premissa escolhida."}
               </small>
               <div className="kind-toggle" style={{ padding: "6px 0 0" }}>
-                <button type="button" className={`btn ${calcMode !== "trips" ? "primary" : ""}`} onClick={() => setCalcMode("qty")}>
-                  Custo/hora
-                </button>
                 <button type="button" className={`btn ${calcMode === "trips" ? "primary" : ""}`} onClick={() => setCalcMode("trips")}>
                   Viagens
                 </button>
@@ -8442,9 +8453,6 @@ function AddMaterial({
                 <div className="kind-toggle" style={{ padding: "6px 0 0" }}>
                   <button type="button" className={`btn ${calcMode === "qty" ? "primary" : ""}`} onClick={() => setCalcMode("qty")}>
                     Quantidade
-                  </button>
-                  <button type="button" className={`btn ${calcMode === "hours" ? "primary" : ""}`} onClick={() => setCalcMode("hours")}>
-                    Custo/hora
                   </button>
                   <button type="button" className={`btn ${calcMode === "days" ? "primary" : ""}`} onClick={() => setCalcMode("days")}>
                     Horas/dia

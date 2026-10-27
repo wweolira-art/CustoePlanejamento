@@ -107,17 +107,28 @@ export function startBudgetBootstrap(db: Database.Database) {
 const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])])) : value;
 export const stateHash = (tables: Record<string, any[]>) => createHash("sha256").update(JSON.stringify(canonical(tables))).digest("hex");
 
-async function remoteTables(): Promise<MigrationPayload> {
+export async function remoteTables(fetcher: typeof supabaseRequest = supabaseRequest): Promise<MigrationPayload> {
   const result: MigrationPayload = {};
-  for (const table of ["safras", "centros_custo", "categorias", "materiais", "atividades", "objetos_custo", "fazendas", "orcamentos", "orcamento_centros", "orcamento_categorias", "orcamento_premissas", "orcamento_itens", "orcamento_item_meses", "orcamento_item_planos"] as BudgetTable[]) {
-    const rows: any[] = [];
-    for (let offset = 0; ; offset += 500) {
-      const page = await supabaseRequest<any[]>(table, { query: new URLSearchParams({ select: "*", order: table === "orcamento_item_meses" ? "item_id,competencia" : "id", offset: String(offset), limit: "500" }) });
-      rows.push(...page);
-      if (page.length < 500) break;
+  const pending = [...["safras", "centros_custo", "categorias", "materiais", "atividades", "objetos_custo", "fazendas", "orcamentos", "orcamento_centros", "orcamento_categorias", "orcamento_premissas", "orcamento_itens", "orcamento_item_meses", "orcamento_item_planos"] as BudgetTable[]];
+  let stopped = false;
+  const worker = async () => {
+    while (!stopped && pending.length) {
+      const table = pending.shift()!;
+      try {
+        const rows: any[] = [];
+        for (let offset = 0; ; offset += 500) {
+          const page = await fetcher<any[]>(table, { query: new URLSearchParams({ select: "*", order: table === "orcamento_item_meses" ? "item_id,competencia" : "id", offset: String(offset), limit: "500" }) });
+          rows.push(...page);
+          if (page.length < 500) break;
+        }
+        result[table] = rows;
+      } catch (error) { stopped = true; throw error; }
     }
-    result[table] = rows;
-  }
+  };
+  // Consultas independentes em paralelo, com limite para a instância gratuita.
+  const completed = await Promise.allSettled(Array.from({ length: 4 }, worker));
+  const failed = completed.find((item) => item.status === "rejected");
+  if (failed?.status === "rejected") throw failed.reason;
   return result;
 }
 
