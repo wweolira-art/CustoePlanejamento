@@ -352,7 +352,8 @@ async function loadRealizadoMensal(codEquipamento: number, ano: number | null) {
     }
     const result = await conn.execute(
       `SELECT TO_CHAR(i.data, 'YYYY-MM') AS mes,
-              COUNT(*) AS realizado
+              COUNT(DISTINCT TRUNC(i.data)) AS realizado,
+              COUNT(*) AS lancamentos
          FROM automotivo.itens_ordemservico i
          JOIN automotivo.ordemservico o
            ON i.ano_ordemservico = o.ano_ordemservico
@@ -366,14 +367,16 @@ async function loadRealizadoMensal(codEquipamento: number, ano: number | null) {
         ORDER BY 1`,
       binds,
     );
-    const map = new Map<string, number>();
+    const dias = new Map<string, number>();
+    const lancamentos = new Map<string, number>();
     for (const row of (result.rows ?? []) as Record<string, unknown>[]) {
       const mes = oracleText(row, "mes", "MES");
       const realizado = oracleNumber(row, "realizado", "REALIZADO");
       if (!mes) continue;
-      map.set(mes, realizado ?? 0);
+      dias.set(mes, realizado ?? 0);
+      lancamentos.set(mes, oracleNumber(row, "lancamentos", "LANCAMENTOS") ?? 0);
     }
-    return map;
+    return { dias, lancamentos };
   });
 }
 
@@ -456,6 +459,7 @@ function estimadoPorKm(km: number, componentes: ComponenteLubrificacao[]) {
 
 function buildMensal(
   realizadoMap: Map<string, number>,
+  lancamentosMap: Map<string, number>,
   kmMensalMap: Map<string, number>,
   componentes: ComponenteLubrificacao[],
   ano: number | null,
@@ -474,6 +478,7 @@ function buildMensal(
       mes: mesKey,
       label: monthNum >= 1 && monthNum <= 12 ? `${monthNames[monthNum - 1]}/${y}` : mesKey,
       estimado: estimadoPorKm(kmMensalMap.get(mesKey) ?? 0, componentes),
+      lancamentos: lancamentosMap.get(mesKey) ?? 0,
       realizado: realizadoMap.get(mesKey) ?? 0,
     });
   }
@@ -490,6 +495,7 @@ function buildAlerta(eficiencia: number | null) {
 function buildMensalCompleto(
   ano: number,
   realizadoMap: Map<string, number>,
+  lancamentosMap: Map<string, number>,
   estimadoMap: Map<string, number>,
 ): LubrificacaoMensal[] {
   const monthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -500,6 +506,7 @@ function buildMensalCompleto(
       mes: mesKey,
       label: `${monthNames[monthNum - 1]}/${ano}`,
       estimado: estimadoMap.get(mesKey) ?? 0,
+      lancamentos: lancamentosMap.get(mesKey) ?? 0,
       realizado: realizadoMap.get(mesKey) ?? 0,
     });
   }
@@ -579,7 +586,8 @@ async function loadResumoFrota(ano: number, mesCalendario: number): Promise<Lubr
        ),
        realizado AS (
          SELECT TO_CHAR(i.data, 'YYYY-MM') AS mes,
-                COUNT(*) AS realizado
+                COUNT(DISTINCT TRUNC(i.data)) AS realizado,
+                COUNT(*) AS lancamentos
            FROM automotivo.itens_ordemservico i
            JOIN automotivo.ordemservico o
              ON i.ano_ordemservico = o.ano_ordemservico
@@ -600,7 +608,8 @@ async function loadResumoFrota(ano: number, mesCalendario: number): Promise<Lubr
        )
        SELECT NVL(e.mes, r.mes) AS mes,
               NVL(e.estimado, 0) AS estimado,
-              NVL(r.realizado, 0) AS realizado
+              NVL(r.realizado, 0) AS realizado,
+              NVL(r.lancamentos, 0) AS lancamentos
          FROM estimado e
          FULL OUTER JOIN realizado r ON r.mes = e.mes
         ORDER BY 1`,
@@ -655,7 +664,7 @@ async function loadResumoFrota(ano: number, mesCalendario: number): Promise<Lubr
        ),
        realizado AS (
          SELECT NVL(tv.descricaotipoequipamento, '(Em branco)') AS tipo,
-                COUNT(*) AS realizado
+                COUNT(DISTINCT TRUNC(i.data)) AS realizado
            FROM automotivo.itens_ordemservico i
            JOIN automotivo.ordemservico o
              ON i.ano_ordemservico = o.ano_ordemservico
@@ -697,17 +706,20 @@ async function loadResumoFrota(ano: number, mesCalendario: number): Promise<Lubr
     );
 
     const realizadoMap = new Map<string, number>();
+    const lancamentosMap = new Map<string, number>();
     const estimadoMap = new Map<string, number>();
     for (const row of (mensalResult.rows ?? []) as Record<string, unknown>[]) {
       const mes = oracleText(row, "mes", "MES");
       if (!mes) continue;
       estimadoMap.set(mes, oracleNumber(row, "estimado", "ESTIMADO") ?? 0);
       realizadoMap.set(mes, oracleNumber(row, "realizado", "REALIZADO") ?? 0);
+      lancamentosMap.set(mes, oracleNumber(row, "lancamentos", "LANCAMENTOS") ?? 0);
     }
 
-    const mensal = buildMensalCompleto(ano, realizadoMap, estimadoMap);
+    const mensal = buildMensalCompleto(ano, realizadoMap, lancamentosMap, estimadoMap);
     const quantidadeEstimada = money1(mensal.reduce((acc, row) => acc + row.estimado, 0));
     const quantidadeRealizada = mensal.reduce((acc, row) => acc + row.realizado, 0);
+    const quantidadeLancamentos = mensal.reduce((acc, row) => acc + row.lancamentos, 0);
     const eficiencia =
       quantidadeEstimada > 0 ? money1((quantidadeRealizada / quantidadeEstimada) * 100) : null;
 
@@ -730,6 +742,7 @@ async function loadResumoFrota(ano: number, mesCalendario: number): Promise<Lubr
     return {
       eficiencia,
       quantidadeEstimada,
+      quantidadeLancamentos,
       quantidadeRealizada,
       mensal,
       porTipo,
@@ -768,7 +781,7 @@ export async function gerarIndicadoresLubrificacao(params: {
     };
   }
 
-  const [componentes, tempoMedioEquipamento, realizadoMap, kmMensalMap, resumoFrota] = await runLimited(
+  const [componentes, tempoMedioEquipamento, realizado, kmMensalMap, resumoFrota] = await runLimited(
     [
       () => loadComponentesLubrificacao(codEquipamento),
       () => loadTempoMedioEquipamento(codEquipamento),
@@ -784,7 +797,7 @@ export async function gerarIndicadoresLubrificacao(params: {
   const pontos = buildPontos(componentes, tempoMedioEquipamento, kmAtual);
   const materiais = buildMateriais(componentes);
 
-  const mensal = buildMensal(realizadoMap, kmMensalMap, componentes, ano, params.mes ?? null);
+  const mensal = buildMensal(realizado.dias, realizado.lancamentos, kmMensalMap, componentes, ano, params.mes ?? null);
   const realizadoPeriodo = mensal.reduce((acc, row) => acc + row.realizado, 0);
   const estimadoPeriodo = mensal.reduce((acc, row) => acc + row.estimado, 0);
   const eficiencia =

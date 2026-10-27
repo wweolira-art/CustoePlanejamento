@@ -29,6 +29,7 @@ export type LubrificacaoMensal = {
   mes: string;
   label: string;
   estimado: number;
+  lancamentos: number;
   realizado: number;
 };
 
@@ -46,6 +47,7 @@ export type LubrificacaoCalendarioDia = {
 export type LubrificacaoResumoFrota = {
   eficiencia: number | null;
   quantidadeEstimada: number;
+  quantidadeLancamentos: number;
   quantidadeRealizada: number;
   mensal: LubrificacaoMensal[];
   porTipo: LubrificacaoPorTipo[];
