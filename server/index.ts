@@ -224,7 +224,7 @@ function parseTripsCalc(body: {
   if (kind === "qty" || kind === "direct") {
     return { tripsMode: false as const, calcKind: null as string | null, calcTrips: null as number | null, calcMachineQty: null as number | null };
   }
-  if (kind === "hours" || kind === "liters" || kind === "days") {
+  if (kind === "hours" || kind === "liters" || kind === "days" || kind === "quantity") {
     return { tripsMode: false as const, calcKind: kind, calcTrips: null as number | null, calcMachineQty: null as number | null };
   }
   const tripsMode = kind === "trips" || isTripsMaterial({
@@ -2666,7 +2666,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
       writeFixedActivityMonths(created, body.months);
     }
     invalidateWorkbook();
-    await applyAutoCalcFull(null);
+    await applyAutoCalcFull(null, { syncEquipmentObc: false });
     persistLineValues(sheetId);
     return res.json(sheetDetail(sheetId, false));
   }
@@ -2799,6 +2799,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
     }
     const hoursMode = trips.calcKind === "hours";
     const daysMode = trips.calcKind === "days";
+    const quantityMode = trips.calcKind === "quantity";
     const hoursRule = hoursMode ? lookupActivityHoursRule(activityId, parent?.cost_object_id ?? requestedCostObject) : null;
     const calcPrice = trips.tripsMode ? trips.calcPrice : Number(body.calcPrice) > 0 ? Number(body.calcPrice) : null;
     let calcHourInterval: number | null = null;
@@ -2849,7 +2850,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
       return res.status(400).json({ error: e instanceof Error ? e.message : "Informe a quantidade de aplicações." });
     }
     const area =
-      trips.tripsMode || daysMode
+      trips.tripsMode || daysMode || quantityMode
         ? { calcAreaPct: null as number | null, calcAreaHa: null as number | null }
         : parseMaterialArea(body);
     const excludeWeekdays = daysMode ? storeExcludeWeekdays(body.calcExcludeWeekdays ?? []) : null;
@@ -2990,7 +2991,7 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
         .get(categoryId, requestedCostObject, parentId, parentId) as { id: number } | undefined;
       if (existingGroup) {
         invalidateWorkbook();
-        await applyAutoCalcFull(null);
+        await applyAutoCalcFull(null, { syncEquipmentObc: false });
         persistLineValues(sheetId);
         return res.json(sheetDetail(sheetId, false));
       }
@@ -3061,6 +3062,9 @@ app.post("/api/sheets/:id/lines", async (req, res) => {
 
   invalidateWorkbook();
   await applyAutoCalcFull(null, {
+    // Só a inclusão de um equipamento filho com código precisa de novos vínculos.
+    // Atividades, valores digitados e materiais são recalculados sem o Oracle.
+    syncEquipmentObc: body.refKind === "cost_object" && !createEquipmentRow && Boolean(String(body.productCode ?? "").trim()),
     forceMaterials:
       Number(body.calcPrice) > 0 &&
       (Number(body.calcDose) > 0 || body.calcKind === "hours" || Boolean(lookupActivityHoursRule(activityId, requestedCostObject))),
@@ -3457,11 +3461,12 @@ app.patch("/api/lines/:id", async (req, res) => {
     const dose = trips.tripsMode ? trips.calcDose : Number(body.calcDose) > 0 ? Number(body.calcDose) : null;
     const price = trips.tripsMode ? trips.calcPrice : Number(body.calcPrice) > 0 ? Number(body.calcPrice) : null;
     const daysMode = trips.calcKind === "days";
+    const quantityMode = trips.calcKind === "quantity";
     const area =
-      trips.tripsMode || daysMode
+      trips.tripsMode || daysMode || quantityMode
         ? { calcAreaPct: null as number | null, calcAreaHa: null as number | null }
         : parseMaterialArea(body);
-    const calcAreaPremise = trips.tripsMode
+    const calcAreaPremise = quantityMode ? null : trips.tripsMode
       ? trips.calcAreaPremise
       : daysMode
         ? null
@@ -3542,6 +3547,9 @@ app.patch("/api/lines/:id", async (req, res) => {
       id,
     );
     setLineSafraPrice(id, price);
+    if (quantityMode && body.calcPlans !== undefined) {
+      db.prepare("UPDATE lines SET calc_plans = ? WHERE id = ?").run(JSON.stringify(parseCalcPlans(body.calcPlans)), id);
+    }
   }
   if (body.funcionarioApiConfig !== undefined) {
     const config = parseFuncionarioApiConfig(body.funcionarioApiConfig);
@@ -3572,6 +3580,9 @@ app.patch("/api/lines/:id", async (req, res) => {
   try {
     if (!reduceOnly) {
       await applyAutoCalcFull(null, {
+        // Editar material ou fórmula não requer consultar os vínculos de todos
+        // os equipamentos no Oracle. A repartição explícita continua disponível.
+        syncEquipmentObc: hourCostChild,
         forceMaterials: isMaterial &&
           (body.calcDose !== undefined ||
             body.calcPrice !== undefined ||

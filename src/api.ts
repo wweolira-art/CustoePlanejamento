@@ -1,23 +1,13 @@
 import type { LubrificacaoDashboardData } from "./lib/lubrificacao";
 import type { PneusData } from "./lib/pneus";
 import type { ConsumoOleoHidraulicoData } from "./lib/consumo-oleo-hidraulico";
+import { apiTimeoutMs } from "./lib/api-timeout";
 
 export type { LubrificacaoDashboardData, ConsumoOleoHidraulicoData };
 const AUTH_STORAGE_KEY = "pa_auth_token";
-const API_TIMEOUT_MS = 30_000;
-// Consultas do relatório de custos podem levar vários minutos em períodos longos.
-// O Oracle permite até 5 minutos por consulta; damos margem para execução e retorno HTTP.
-const COST_REPORT_TIMEOUT_MS = 10 * 60_000;
-const CONTRACT_OCCURRENCES_TIMEOUT_MS = 10 * 60_000;
 
 async function request(url: string, init: RequestInit = {}, signal?: AbortSignal) {
-  const isCostReport = url.startsWith("/api/custo/") || url.startsWith("/api/custo-colheita?");
-  const isContractOccurrences = url.startsWith("/api/contract-control/ocorrencias?");
-  const timeoutMs = isCostReport
-    ? COST_REPORT_TIMEOUT_MS
-    : isContractOccurrences
-      ? CONTRACT_OCCURRENCES_TIMEOUT_MS
-      : API_TIMEOUT_MS;
+  const timeoutMs = apiTimeoutMs(url, init.method);
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -28,8 +18,10 @@ async function request(url: string, init: RequestInit = {}, signal?: AbortSignal
     if (controller.signal.aborted && !signal?.aborted) {
       const seconds = Math.round(timeoutMs / 1000);
       const route = url.split("?", 1)[0];
-      const reportName = isCostReport || isContractOccurrences ? ` no relatório (${route})` : "";
-      throw new Error(`A API demorou mais de ${seconds} segundos para responder${reportName}. Verifique se o servidor está ativo e tente novamente.`);
+      const gravacao = !["GET", "HEAD", "OPTIONS"].includes((init.method ?? "GET").toUpperCase());
+      throw new Error(gravacao
+        ? `Não foi possível confirmar a gravação em até ${seconds} segundos (${route}). Atualize os dados antes de tentar novamente, pois o servidor pode ainda estar concluindo a operação.`
+        : `A API demorou mais de ${seconds} segundos para responder (${route}). Verifique se o servidor está ativo e tente novamente.`);
     }
     throw error;
   } finally {

@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { quantityUnit, type QuantityUnit } from "../shared/quantity-unit.js";
 import { currentSafraId, ensureSafras, previousSafra, resolveSafraId, safraStartYear } from "./safras.js";
 import { ensureLineSafraPrices } from "./line-prices.js";
 import { subprocessMonthValues, listCustomSubprocesses, premiseDaysByMonth } from "./premissas-dist.js";
@@ -191,6 +192,8 @@ export function storeCalcMonths(raw: unknown): string | null {
 }
 
 export type StoredCalcPlan = {
+  quantityUnit?: QuantityUnit;
+  applications?: number;
   mode: "area" | "days" | "fixed";
   months: number[] | null;
   dose: number | null;
@@ -246,6 +249,8 @@ export function parseCalcPlans(raw: unknown): StoredCalcPlan[] {
     const areaPct = Number(row.areaPct);
     plans.push({
       mode,
+      ...(mode === "fixed" ? { quantityUnit: quantityUnit(row.quantityUnit) } : {}),
+      ...(mode === "fixed" && row.applications != null ? { applications: Number.isFinite(Number(row.applications)) && Number(row.applications) > 0 ? Number(row.applications) : 1 } : {}),
       months: months === undefined ? null : months,
       dose: Number.isFinite(dose) && dose > 0 ? dose : null,
       price: Number.isFinite(price) && price > 0 ? price : null,
@@ -474,7 +479,7 @@ function planAreaKeys(
   return [...new Set(fallback)];
 }
 
-function computeActivityPlanMonths(
+export function computeActivityPlanMonths(
   plan: StoredCalcPlan,
   line: {
     activity_id?: number | null;
@@ -489,7 +494,7 @@ function computeActivityPlanMonths(
     const qty = Number(plan.dose) > 0 ? Number(plan.dose) : 1;
     const price = Number(plan.price);
     if (!(price > 0)) return null;
-    const monthly = qty * price;
+    const monthly = qty * price * (plan.applications ?? 1);
     return Array.from({ length: 12 }, () => monthly);
   }
   const areaKeys = planAreaKeys(line);
@@ -1139,6 +1144,11 @@ export function computeMaterialAutoMonths(
   },
   startYear?: number,
 ) {
+  if (line.calc_kind === "quantity") {
+    const amount = Number(line.calc_dose) * Number(line.calc_price) * (Number(line.calc_applications) > 0 ? Number(line.calc_applications) : 1);
+    if (!(amount > 0) || !Number.isFinite(amount)) return null;
+    return gateMonthsBySelection(Array.from({ length: 12 }, () => amount), parseCalcMonths(line.calc_months));
+  }
   if (isTripsMaterial(line)) return computeTripsMonths(line);
   if (isDaysHoursMaterial(line)) {
     const year = startYear ?? harvestStartYear(currentSafraId());
@@ -2373,6 +2383,11 @@ export function applyAutoCalc(
   const parentLineId = opts?.parentLineId != null ? Number(opts.parentLineId) : null;
 
   for (const line of materialLines) {
+    if (line.calc_kind === "quantity") {
+      const values = computeMaterialAutoMonths(null, line, startYear);
+      if (values) { writeAutoMonths(line.id, values); applied.add(line.id); }
+      continue;
+    }
     if (!(Number(line.calc_price) > 0)) {
       if (!hasManualFormula(line.id) && (Number(line.calc_dose) > 0 || line.ref_kind === "cost_object")) {
         writeAutoMonths(line.id, Array.from({ length: 12 }, () => 0));
@@ -2481,8 +2496,8 @@ export function applyAutoCalc(
 
 export async function applyAutoCalcFull(
   safraId?: number | null,
-  opts?: { forceMaterials?: boolean; parentLineId?: number | null; strictObcSplit?: boolean },
+  opts?: { forceMaterials?: boolean; parentLineId?: number | null; strictObcSplit?: boolean; syncEquipmentObc?: boolean },
 ) {
   applyAutoCalc(safraId, opts);
-  await syncEquipmentHourCostSplit({ strict: opts?.strictObcSplit });
+  if (opts?.syncEquipmentObc !== false) await syncEquipmentHourCostSplit({ strict: opts?.strictObcSplit });
 }
