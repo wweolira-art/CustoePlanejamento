@@ -217,6 +217,8 @@ export function UsersAdmin() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ imported: number; importedAt: string | null } | null>(null);
 
   const [createNome, setCreateNome] = useState("");
   const [createEmail, setCreateEmail] = useState("");
@@ -251,7 +253,22 @@ export function UsersAdmin() {
 
   useEffect(() => {
     void load();
+    void api.adminImportedUsersStatus().then(setImportStatus).catch(() => undefined);
   }, []);
+
+  async function importActiveUsers() {
+    setImporting(true);
+    setErr(null);
+    try {
+      const result = await api.importActiveAdminUsers();
+      setImportStatus(result);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Não foi possível importar os usuários ativos.");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   function openEdit(user: AdminUserRow) {
     setEditId(user.id);
@@ -406,7 +423,17 @@ export function UsersAdmin() {
       </section>
 
       <section className="panel">
-        <h3>Usuários cadastrados</h3>
+        <div className="modal-actions" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Usuários cadastrados</h3>
+          <button type="button" className="btn" disabled={importing || loading} onClick={() => void importActiveUsers()}>
+            {importing ? "Importando ativos…" : "Importar usuários ativos"}
+          </button>
+        </div>
+        <p className="lead" style={{ marginTop: 0 }}>
+          {importStatus?.importedAt
+            ? importStatus.imported + " usuário(s) ativo(s) armazenado(s) localmente em " + new Date(importStatus.importedAt).toLocaleString("pt-BR") + "."
+            : "A importação armazena uma cópia local dos usuários ativos (ID, nome e e-mail), sem dados de senha."}
+        </p>
         {loading ? <p>Carregando…</p> : null}
         {!loading && !users.length ? <p>Nenhum usuário encontrado na API.</p> : null}
         {users.length ? (

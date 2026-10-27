@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { loadEnvFile } from "./oracle.js";
 import { getUserPermissions } from "./user-permissions.js";
 import { verifyPassword } from "./password-verification.js";
+import { replaceImportedActiveUsers } from "./user-directory.js";
 
 export type AuthUser = {
   id: number;
@@ -15,7 +16,7 @@ type OrdsUsuario = {
   nome: string;
   email: string;
   senha_hash: string;
-  ativo: number | boolean;
+  ativo: number | boolean | string;
   data_cadastro?: string | null;
   data_ultimo_login?: string | null;
   links?: { rel: string; href: string }[];
@@ -77,12 +78,34 @@ export function withUserPermissions(user: Omit<AuthUser, "permissions">): AuthUs
 }
 
 async function fetchOrdUsers(): Promise<OrdsUsuario[]> {
-  const res = await fetchUsuarioOrds(usuarioCollectionUrl());
-  if (!res.ok) {
-    throw new Error(`API de usuários retornou ${res.status}: ${await readOrdsError(res)}`);
+  const baseUrl = usuarioCollectionUrl();
+  const rows: OrdsUsuario[] = [];
+  const pageSize = 500;
+  let offset = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const url = new URL(baseUrl);
+    url.searchParams.set("offset", String(offset));
+    url.searchParams.set("limit", String(pageSize));
+    const res = await fetchUsuarioOrds(url.toString());
+    if (!res.ok) {
+      throw new Error(`API de usuários retornou ${res.status}: ${await readOrdsError(res)}`);
+    }
+    const data = (await res.json()) as { items?: OrdsUsuario[]; hasMore?: boolean };
+    const items = Array.isArray(data.items) ? data.items : [];
+    rows.push(...items);
+    hasMore = Boolean(data.hasMore) && items.length > 0;
+    offset += items.length;
+    if (hasMore && rows.length >= 50_000) {
+      throw new Error("A importação excedeu 50.000 usuários. Ajuste a paginação da API ORDS antes de tentar novamente.");
+    }
   }
-  const data = (await res.json()) as { items?: OrdsUsuario[] };
-  return data.items ?? [];
+  return rows;
+}
+
+function isUsuarioAtivo(value: OrdsUsuario["ativo"]) {
+  if (typeof value === "string") return !["", "0", "N", "NAO", "NÃO", "FALSE", "INATIVO"].includes(value.trim().toUpperCase());
+  return Boolean(value);
 }
 
 async function fetchUsuarioById(id: number): Promise<OrdsUsuario | null> {
@@ -105,10 +128,18 @@ export async function listAdminUsers(): Promise<AdminUserRow[]> {
       id: row.id_usuario,
       nome: row.nome,
       email: row.email,
-      ativo: Boolean(row.ativo),
+      ativo: isUsuarioAtivo(row.ativo),
       permissions: getUserPermissions(row.id_usuario),
     }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+export async function importActiveAdminUsers() {
+  const rows = await fetchOrdUsers();
+  const active = rows
+    .filter((row) => isUsuarioAtivo(row.ativo) && Number.isFinite(Number(row.id_usuario)))
+    .map((row) => ({ id: Number(row.id_usuario), nome: String(row.nome ?? "").trim(), email: String(row.email ?? "").trim().toLowerCase() }));
+  return replaceImportedActiveUsers(active);
 }
 
 export async function createAdminUser(input: {

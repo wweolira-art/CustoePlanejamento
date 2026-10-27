@@ -2,6 +2,7 @@ import type { Express, Request } from "express";
 import oracledb from "oracledb";
 import { oracleNumber, oracleText, oracleValue, withOracle, withOracleWrite } from "./oracle.js";
 import { readBearerToken, verifySessionToken } from "./auth.js";
+import { listImportedActiveUsers } from "./user-directory.js";
 
 type SeedTransportItemInput = {
   proprietario?: string;
@@ -256,6 +257,15 @@ function itemValues(
 }
 
 export function registerSeedTransportReportRoutes(app: Express) {
+  app.get("/api/seed-transport-report/active-users", (req, res) => {
+    try {
+      requireSessionUser(req);
+      res.json(listImportedActiveUsers());
+    } catch (e) {
+      res.status(401).json({ error: e instanceof Error ? e.message : "Sessão inválida." });
+    }
+  });
+
   app.get("/api/seed-transport-report/options", async (_req, res) => {
     try {
       const data = await withOracle(async (conn) => {

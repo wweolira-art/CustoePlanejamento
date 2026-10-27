@@ -101,6 +101,17 @@ export interface AdminUserRow {
   permissions: string[];
 }
 
+export interface ImportedActiveUsersStatus {
+  imported: number;
+  importedAt: string | null;
+}
+
+export interface ImportedActiveUser {
+  id: number;
+  nome: string;
+  email: string;
+}
+
 export interface PermissionCatalog {
   admin: { key: string; label: string }[];
   costPlanning: { key: string; label: string }[];
@@ -2529,6 +2540,8 @@ export const api = {
   logout: () => send<{ ok: boolean }>("/api/auth/logout", "POST"),
   adminPermissionCatalog: () => get<PermissionCatalog>("/api/admin/permissions/catalog"),
   adminUsers: () => get<AdminUserRow[]>("/api/admin/users"),
+  adminImportedUsersStatus: () => get<ImportedActiveUsersStatus>("/api/admin/users/import-status"),
+  importActiveAdminUsers: () => send<ImportedActiveUsersStatus>("/api/admin/users/import-active", "POST"),
   createAdminUser: (body: {
     nome: string;
     email: string;
@@ -2591,6 +2604,7 @@ export const api = {
     return get<{ rows: CompareRow[] }>(`/api/orcado-realizado/grupo-gasto-detalhes?${q}`);
   },
   seedTransportOptions: () => get<SeedTransportOptions>("/api/seed-transport-report/options"),
+  seedTransportActiveUsers: () => get<ImportedActiveUser[]>("/api/seed-transport-report/active-users"),
   seedTransportTalhoes: (codFazenda: number | string) =>
     get<{ talhoes: Array<{ codigo: number | null }> }>(
       `/api/seed-transport-report/talhoes?codFazenda=${encodeURIComponent(String(codFazenda))}`,

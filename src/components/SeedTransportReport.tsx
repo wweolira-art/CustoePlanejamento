@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type SeedTransportOptions } from "../api";
+import { api, type ImportedActiveUser, type SeedTransportOptions } from "../api";
 import { PrintButton } from "./PrintButton";
 
 type ReportRow = {
@@ -311,8 +311,10 @@ function groupRowsByOwner(rows: ReportRow[]) {
 export function SeedTransportReport() {
   const [rows, setRows] = useState<ReportRow[]>(loadRows);
   const [header, setHeader] = useState<ReportHeader>(loadHeader);
+  const [funcionarioTexto, setFuncionarioTexto] = useState(() => loadHeader().codFuncionarioTerceiro);
   const [draft, setDraft] = useState<ReportRow>(() => emptyRow(0, rows[rows.length - 1]));
   const [options, setOptions] = useState<SeedTransportOptions>({ operacoes: [], fazendas: [] });
+  const [usuariosAtivos, setUsuariosAtivos] = useState<ImportedActiveUser[]>([]);
   const [savingOracle, setSavingOracle] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -362,7 +364,27 @@ export function SeedTransportReport() {
 
   useEffect(() => {
     api.seedTransportOptions().then(setOptions).catch((e: Error) => setStatus(e.message));
+    api.seedTransportActiveUsers().then((users) => {
+      setUsuariosAtivos(users);
+      const existing = users.find((user) => String(user.id) === header.codFuncionarioTerceiro);
+      if (existing && /^\d+$/.test(funcionarioTexto)) {
+        setFuncionarioTexto(`${existing.id} - ${existing.nome}`);
+      }
+    }).catch(() => undefined);
   }, []);
+
+  const updateFuncionario = (value: string) => {
+    setFuncionarioTexto(value);
+    const selected = value.match(/^(\d+)\s+-\s+/);
+    if (selected) {
+      const user = usuariosAtivos.find((item) => item.id === Number(selected[1]));
+      if (user) {
+        updateHeader("codFuncionarioTerceiro", String(user.id));
+        return;
+      }
+    }
+    updateHeader("codFuncionarioTerceiro", /^\d+$/.test(value.trim()) ? value.trim() : "");
+  };
 
   const fazendaByCode = (code: string) => options.fazendas.find((row) => String(row.codigo ?? "") === code);
 
@@ -437,6 +459,11 @@ export function SeedTransportReport() {
             </option>
           ))}
         </datalist>
+        <datalist id="seed-report-employees">
+          {usuariosAtivos.map((user) => (
+            <option key={user.id} value={`${user.id} - ${user.nome}`} label={user.email} />
+          ))}
+        </datalist>
         <form
           className="form-grid seed-transport-entry-form"
           onSubmit={(event) => {
@@ -470,8 +497,13 @@ export function SeedTransportReport() {
             <input value={header.responsavel} onChange={(e) => updateHeader("responsavel", e.target.value)} />
           </label>
           <label>
-            Funcionário terceiro
-            <input value={header.codFuncionarioTerceiro} onChange={(e) => updateHeader("codFuncionarioTerceiro", e.target.value)} />
+            Código do funcionário
+            <input
+              list="seed-report-employees"
+              value={funcionarioTexto}
+              onChange={(e) => updateFuncionario(e.target.value)}
+              placeholder={usuariosAtivos.length ? "Pesquise por código ou nome" : "Código do funcionário"}
+            />
           </label>
           <label>
             Contrato

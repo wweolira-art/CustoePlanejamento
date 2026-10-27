@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import {
   createAdminUser,
+  importActiveAdminUsers,
   listAdminUsers,
   readBearerToken,
   updateAdminUser,
@@ -9,6 +10,7 @@ import {
 } from "./auth.js";
 import { canManageUsers, permissionCatalog } from "./permissions.js";
 import { setUserPermissions } from "./user-permissions.js";
+import { importedActiveUsersStatus } from "./user-directory.js";
 
 function requireAuthUser(req: Request, res: Response) {
   const user = verifySessionToken(readBearerToken(req.headers.authorization));
@@ -45,6 +47,20 @@ export function registerUsersAdminRoutes(app: import("express").Express) {
       res.json(await listAdminUsers());
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : "Falha ao listar usuários." });
+    }
+  });
+
+  app.get("/api/admin/users/import-status", (req, res) => {
+    if (!requireUsersAdmin(req, res)) return;
+    res.json(importedActiveUsersStatus());
+  });
+
+  app.post("/api/admin/users/import-active", async (req, res) => {
+    if (!requireUsersAdmin(req, res)) return;
+    try {
+      res.json(await importActiveAdminUsers());
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : "Não foi possível importar os usuários ativos." });
     }
   });
 
